@@ -46,7 +46,6 @@ def display_outputs(original_image, skin_region, layer_groups, dice_scores):
 
 
 
-
 def display_histogram(v_set):
     plt.figure(figsize=(10, 8))
     i = 1
@@ -59,6 +58,10 @@ def display_histogram(v_set):
         i += 1
     plt.tight_layout()
     plt.show()
+
+import cv2
+import numpy as np
+from tabulate import tabulate
 
 def cca(original_image, mask_image):
     try:
@@ -77,7 +80,7 @@ def cca(original_image, mask_image):
         }
 
         v_set = {
-            'DEJ': [], 'DRM': [], 'EPI': [], 'KER': [], 'BKG': []
+            'DEJ': set(), 'DRM': set(), 'EPI': set(), 'KER': set(), 'BKG': set()
         }
         
         segmented_images = {}
@@ -89,7 +92,7 @@ def cca(original_image, mask_image):
                 intensity = sum(img[x, y]) / len(img[x, y])
                 for color, layer in color_codes.items():
                     if pixel == color:
-                        v_set[layer].append(intensity)
+                        v_set[layer].add(round(intensity, 6))
                         if layer not in segmented_images:
                             segmented_images[layer] = np.zeros_like(img)
                             segmented_masks[layer] = np.zeros_like(mask)
@@ -97,50 +100,37 @@ def cca(original_image, mask_image):
                         segmented_masks[layer][x, y] = mask[x, y]
                         break
 
-        for layer, values in v_set.items():
-            v_set[layer] = np.unique(values, axis=0)
-
-
-        rebuild_segmented_images = {layer: np.zeros_like(img) for layer in v_set}
-        rebuild_segmented_masks = {layer: np.zeros_like(mask) for layer in v_set}
-
-        
-        for x in range(img.shape[0]):
-            for y in range(img.shape[1]):
-                img_intensity = sum(img[x, y]) / len(img[x, y])
-                for layer, intensities in v_set.items():
-                    if img_intensity in intensities:
-                        if layer not in rebuild_segmented_images:
-                            rebuild_segmented_images[layer] = np.zeros_like(img)
+        rebuild_segmented_images = {}
+        rebuild_segmented_masks = {}
+        for layer, intensities in v_set.items():
+            rebuild_segmented_images[layer] = np.zeros_like(img)
+            rebuild_segmented_masks[layer] = np.zeros_like(mask)
+            for x in range(img.shape[0]):
+                for y in range(img.shape[1]):
+                    img_intensity = sum(img[x, y]) / len(img[x, y])
+                    if round(img_intensity, 6) in intensities:
                         rebuild_segmented_images[layer][x, y] = img[x, y]
-                        break
 
-        for x in range(mask.shape[0]):
-            for y in range(mask.shape[1]):
-                mask_intensity = sum(mask[x, y]) / len(mask[x, y])
-                for layer, intensities in v_set.items():
-                    if mask_intensity in intensities:
-                        if layer not in rebuild_segmented_masks:
-                            rebuild_segmented_masks[layer] = np.zeros_like(mask)
+            for x in range(mask.shape[0]):
+                for y in range(mask.shape[1]):
+                    mask_intensity = sum(mask[x, y]) / len(mask[x, y])
+                    if round(mask_intensity, 6) in intensities:
                         rebuild_segmented_masks[layer][x, y] = mask[x, y]
-                        break
 
         return v_set, segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks
 
     except Exception as e:
-        traceback.print_exc()  
-        return None, None, None
+        print(e)
+        return None, None, None, None, None
 
-original_image_path = 'Assignment-1\Test/Tissue/RA23-01882-A1-1-PAS.[9728x2048].jpg'
-mask_image_path = 'Assignment-1\Test/Mask/RA23-01882-A1-1.[9728x2048].png'
-
-
+original_image_path = 'Assignment-1\Train\Tissue\RA23-01882-A1-1-PAS.[1536x2560].jpg'
+mask_image_path = 'Assignment-1\Train\Mask\RA23-01882-A1-1.[1536x2560].png'
 
 v_set, segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks = cca(original_image_path, mask_image_path)
 
 if v_set is not None and segmented_images is not None:
     print(tabulate(v_set, headers='keys', tablefmt='pretty'))
-    display_histogram(v_set)
+
     segmented_images_list = []
     segmented_masks_list = []
     rebuild_segmented_images_list = []
@@ -148,12 +138,9 @@ if v_set is not None and segmented_images is not None:
 
     for layer, segmented_image in segmented_images.items():     
         segmented_images_list.append(segmented_image)       
-        rebuild_segmented_image = rebuild_segmented_images.get(layer, np.zeros_like(segmented_image))        
-        rebuild_segmented_images_list.append(rebuild_segmented_image)
-        segmented_mask = segmented_masks.get(layer, np.zeros_like(segmented_image))        
-        segmented_masks_list.append(segmented_mask)
-        rebuild_segmented_mask = rebuild_segmented_masks.get(layer, np.zeros_like(segmented_image))        
-        rebuild_segmented_masks_list.append(rebuild_segmented_mask)
+        rebuild_segmented_images_list.append(rebuild_segmented_images.get(layer, np.zeros_like(segmented_image)))
+        segmented_masks_list.append(segmented_masks.get(layer, np.zeros_like(segmented_image)))
+        rebuild_segmented_masks_list.append(rebuild_segmented_masks.get(layer, np.zeros_like(segmented_image)))
    
     segmented_images_combined = np.hstack(segmented_images_list)
     segmented_masks_combined = np.hstack(segmented_masks_list)
@@ -161,9 +148,8 @@ if v_set is not None and segmented_images is not None:
     rebuild_segmented_masks_combined = np.hstack(rebuild_segmented_masks_list)
    
     grid_image = np.vstack((segmented_images_combined, segmented_masks_combined, rebuild_segmented_images_combined, rebuild_segmented_masks_combined))
-
     
-    screen_height, screen_width = np.array(grid_image.shape[:2]) * 0.4  # Adjust factor as needed
+    screen_height, screen_width = np.array(grid_image.shape[:2]) * 0.4 
 
     if grid_image.shape[0] > screen_height or grid_image.shape[1] > screen_width:
         scale_factor = min(screen_height / grid_image.shape[0], screen_width / grid_image.shape[1])
@@ -173,4 +159,3 @@ if v_set is not None and segmented_images is not None:
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    
