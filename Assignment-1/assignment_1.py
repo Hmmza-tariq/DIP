@@ -100,6 +100,10 @@ def cca(original_image, mask_image):
                         segmented_masks[layer][x, y] = mask[x, y]
                         break
 
+        for layer, intensities in v_set.items():
+            v_set[layer] = np.unique(list(intensities))
+            v_set[layer] = np.sort(v_set[layer])
+
         rebuild_segmented_images = {}
         rebuild_segmented_masks = {}
         for layer, intensities in v_set.items():
