@@ -44,7 +44,10 @@ def display_outputs(original_image, skin_region, layer_groups, dice_scores):
     plt.tight_layout()
     plt.show()
 
-
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from tabulate import tabulate
 
 def display_histogram(v_set):
     plt.figure(figsize=(10, 8))
@@ -58,10 +61,6 @@ def display_histogram(v_set):
         i += 1
     plt.tight_layout()
     plt.show()
-
-import cv2
-import numpy as np
-from tabulate import tabulate
 
 def cca(original_image, mask_image):
     try:
@@ -80,19 +79,19 @@ def cca(original_image, mask_image):
         }
 
         v_set = {
-            'DEJ': set(), 'DRM': set(), 'EPI': set(), 'KER': set(), 'BKG': set()
+            'DEJ': [], 'DRM': [], 'EPI': [], 'KER': [], 'BKG': []
         }
-        
+
         segmented_images = {}
         segmented_masks = {}
 
         for x in range(mask.shape[0]):
             for y in range(mask.shape[1]):
                 pixel = tuple(mask[x, y])
-                intensity = sum(img[x, y]) / len(img[x, y])
+                intensity = img[x, y]
                 for color, layer in color_codes.items():
                     if pixel == color:
-                        v_set[layer].add(round(intensity, 6))
+                        v_set[layer].append(intensity)
                         if layer not in segmented_images:
                             segmented_images[layer] = np.zeros_like(img)
                             segmented_masks[layer] = np.zeros_like(mask)
@@ -101,8 +100,10 @@ def cca(original_image, mask_image):
                         break
 
         for layer, intensities in v_set.items():
-            v_set[layer] = np.unique(list(intensities))
-            v_set[layer] = np.sort(v_set[layer])
+            v_set[layer] = np.array(intensities)
+
+        for layer, intensities in v_set.items():
+            v_set[layer] = np.unique(intensities, axis=0)
 
         rebuild_segmented_images = {}
         rebuild_segmented_masks = {}
@@ -111,14 +112,12 @@ def cca(original_image, mask_image):
             rebuild_segmented_masks[layer] = np.zeros_like(mask)
             for x in range(img.shape[0]):
                 for y in range(img.shape[1]):
-                    img_intensity = sum(img[x, y]) / len(img[x, y])
-                    if round(img_intensity, 6) in intensities:
+                    if (img[x, y] == intensities).all(axis=-1).any():
                         rebuild_segmented_images[layer][x, y] = img[x, y]
 
             for x in range(mask.shape[0]):
                 for y in range(mask.shape[1]):
-                    mask_intensity = sum(mask[x, y]) / len(mask[x, y])
-                    if round(mask_intensity, 6) in intensities:
+                    if (mask[x, y] == intensities).all(axis=-1).any():
                         rebuild_segmented_masks[layer][x, y] = mask[x, y]
 
         return v_set, segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks
