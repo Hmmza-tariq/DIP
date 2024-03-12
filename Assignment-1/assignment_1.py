@@ -75,13 +75,13 @@ def cca(original_images, mask_images):
                             segmented_masks[layer][x, y] = mask[x, y]
                             break
 
-            for layer, values in v_set.items():
-                v_set[layer] = np.unique(values, axis=0)
+        #     for layer, values in v_set.items():
+        #         v_set[layer] = np.unique(values, axis=0)
 
             print('Segmented and Masked Images: ', i)
 
-        for layer, values in v_set.items():
-                v_set[layer] = np.unique(values, axis=0)
+        # for layer, values in v_set.items():
+        #         v_set[layer] = np.unique(values, axis=0)
 
 
         img = cv2.imread("Assignment-1\Train\Tissue\RA23-01882-A1-1-PAS.[1536x2560].jpg", cv2.IMREAD_COLOR)
@@ -95,7 +95,7 @@ def cca(original_images, mask_images):
             for y in range(img.shape[1]):
                 img_intensity = img[x, y]
                 for layer, intensities in v_set.items():
-                    if img_intensity in intensities:
+                    if np.any(img_intensity == intensities):
                         if layer in rebuild_segmented_images:
                             rebuild_segmented_images[layer][x, y] = img[x, y]
                         else:
@@ -106,7 +106,7 @@ def cca(original_images, mask_images):
             for y in range(mask.shape[1]):
                 mask_intensity = mask[x, y]
                 for layer, intensities in v_set.items():
-                    if mask_intensity in intensities:
+                    if  np.any(mask_intensity in intensities):
                         if layer in rebuild_segmented_masks:
                             rebuild_segmented_masks[layer][x, y] = mask[x, y]
                         else:
@@ -125,12 +125,14 @@ def cca(original_images, mask_images):
 tissue_folder_path = 'Assignment-1/Train/Tissue/'
 mask_folder_path = 'Assignment-1/Train/Mask/'
 
-original_images, mask_images = read_images_from_folders(tissue_folder_path, mask_folder_path)
+# original_images, mask_images = read_images_from_folders(tissue_folder_path, mask_folder_path)
+original_images  = [ cv2.imread('Assignment-1\Train\Tissue\RA23-01882-A1-1-PAS.[1536x2560].jpg', cv2.IMREAD_COLOR)]
+mask_images = [ cv2.imread('Assignment-1\Train\Mask\RA23-01882-A1-1.[1536x2560].png', cv2.IMREAD_COLOR)]
 
 v_set, segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks = cca(original_images, mask_images)
 
 if v_set is not None and segmented_images is not None:
-    # print(v_set)
+    print('DEJ: ', len(v_set['DEJ']), 'DRM: ', len(v_set['DRM']), 'EPI: ', len(v_set['EPI']), 'KER: ', len(v_set['KER']), 'BKG: ', len(v_set['BKG']))
     display_histogram(v_set)
     segmented_images_list = []
     segmented_masks_list = []
