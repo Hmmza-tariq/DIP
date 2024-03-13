@@ -1,52 +1,44 @@
-import cv2
+import matplotlib.pyplot as plt
 import numpy as np
-import os
 
-def read_images_from_folders(tissue_folder, mask_folder):
-    original_images = []
-    mask_images = []
-    tissue_files = os.listdir(tissue_folder)
-    tissue_files.sort()
-    mask_files = os.listdir(mask_folder)
-    mask_files.sort()
-    for tissue_file, mask_file in zip(tissue_files, mask_files):
-        tissue_path = os.path.join(tissue_folder, tissue_file)
-        mask_path = os.path.join(mask_folder, mask_file)
-        tissue_img = cv2.imread(tissue_path, cv2.IMREAD_COLOR)
-        mask_img = cv2.imread(mask_path, cv2.IMREAD_COLOR)
-        original_images.append(tissue_img)
-        mask_images.append(mask_img)
-    return original_images, mask_images
+from matplotlib.widgets import RangeSlider
 
-def remove_background(image, mask):
-    try:
-        if image is None or mask is None:
-            raise ValueError("One or both of the images could not be loaded.")
-        mask_gray = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_gray, connectivity=8)
-        largest_label = 1
-        max_area = stats[largest_label, cv2.CC_STAT_AREA]
-        for label in range(2, num_labels):
-            area = stats[label, cv2.CC_STAT_AREA]
-            if area > max_area:
-                largest_label = label
-                max_area = area
-        largest_component_mask = (labels == largest_label).astype(np.uint8)
-        result_image = cv2.bitwise_and(image, image, mask=largest_component_mask)
-        return result_image
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
+# generate a fake image
+np.random.seed(19680801)
+N = 128
+img = np.random.randn(N, N)
+
+fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+fig.subplots_adjust(bottom=0.25)
+
+im = axs[0].imshow(img)
+axs[1].hist(img.flatten(), bins='auto')
+axs[1].set_title('Histogram of pixel intensities')
+
+# Create the RangeSlider
+slider_ax = fig.add_axes([0.20, 0.1, 0.60, 0.03])
+slider = RangeSlider(slider_ax, "Threshold", img.min(), img.max())
+
+# Create the Vertical lines on the histogram
+lower_limit_line = axs[1].axvline(slider.val[0], color='k')
+upper_limit_line = axs[1].axvline(slider.val[1], color='k')
 
 
+def update(val):
+    # The val passed to a callback by the RangeSlider will
+    # be a tuple of (min, max)
 
-original_images, mask_images = read_images_from_folders('Assignment-1/Test/Tissue/', 'Assignment-1/Test/Mask/')
-for img, mask in zip(original_images, mask_images):
-    result = remove_background(img, mask)
-    grid_image = np.hstack([img, mask, result])
-    cv2.imshow('Original', grid_image)
-    cv2.waitKey(0)
+    # Update the image's colormap
+    im.norm.vmin = val[0]
+    im.norm.vmax = val[1]
+
+    # Update the position of the vertical lines
+    lower_limit_line.set_xdata([val[0], val[0]])
+    upper_limit_line.set_xdata([val[1], val[1]])
+
+    # Redraw the figure to ensure it updates
+    fig.canvas.draw_idle()
 
 
-cv2.waitKey(0)
-
+slider.on_changed(update)
+plt.show() 

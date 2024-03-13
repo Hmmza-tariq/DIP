@@ -4,8 +4,6 @@ import matplotlib.pyplot as plt
 from tabulate import tabulate
 import traceback
 import os
-import ipywidgets as widgets
-from IPython.display import display
 
 def read_images_from_folders(tissue_folder, mask_folder):
     original_images = []
@@ -43,6 +41,60 @@ def remove_background(image, mask):
         print(f"Error: {e}")
         return None
 
+def refine_layer(v_set, code, min_intensity, max_intensity):
+    layer_values = []
+    try:
+        for i in range(len(v_set[code])):  
+            for j in range(len(v_set[code][i])):  
+              if np.all(v_set[code][i] >= min_intensity) and np.all(v_set[code][i] <= max_intensity):
+                layer_values.append(v_set[code][i])
+                break
+
+        v_set[code] = np.array(layer_values)       
+        display_histograms(v_set)
+    except Exception as e:
+        print(f"Error: {e}")
+    return v_set
+def input_refine_layer(v_set):
+    try:
+        img = cv2.imread('resultant_histogram.png')
+        cv2.imshow('Resultant Histogram', img)
+        for layer_code, layer_values in v_set.items():
+            if layer_code == 'DEJ':
+                min_b = 241
+                max_b = 256
+                min_g = 99
+                max_g = 183
+                min_r = 174
+                max_r = 256
+            elif layer_code == 'DRM':
+                min_b = 197
+                max_b = 249
+                min_g = 90
+                max_g = 214
+                min_r = 171
+                max_r = 249
+            elif layer_code == 'EPI':
+                min_b = 214
+                max_b = 242
+                min_g = 25
+                max_g = 90
+                min_r = 113
+                max_r = 182
+            elif layer_code == 'KER':
+                min_b = 200
+                max_b = 256
+                min_g = 65
+                max_g = 95
+                min_r = 78
+                max_r = 135
+            v_set = refine_layer(v_set, layer_code, [min_b, min_g, min_r], [max_b, max_g, max_r])
+        cv2.destroyAllWindows()
+        return v_set
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+    
 def display_histograms(v_set):
     plt.figure(figsize=(10, 8))
     i = 1
@@ -51,40 +103,31 @@ def display_histograms(v_set):
             plt.subplot(5, 3, i)
             plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=['b', 'g', 'r'][j], alpha=0.5)
             plt.title(f"{layer_code} - {'BGR'[j]}")
-            plt.ylim(0, 800)
+            plt.ylim(0, 500)
             plt.xlim(0, 256)
             i += 1
 
     plt.tight_layout()
+    plt.savefig('histograms.png')
     plt.show()
-
+    
 def display_resultant_histogram(v_set):
-    def update_histogram(b_range, g_range, r_range):
-                plt.figure(figsize=(15, 10))
-                layer_colors = ['b', 'g', 'r', 'm', 'k', 'orange', 'lime', 'pink']
-                num_layers = len(v_set)
-                num_channels = 3
-                for j in range(num_channels):
-                    plt.subplot(1, num_channels, j+1)
-                    for idx, (layer_code, layer_values) in enumerate(v_set.items()):
-                        color_idx = idx % len(layer_colors)
-                        b_mask = np.logical_and(layer_values[:, 0] >= b_range[0], layer_values[:, 0] <= b_range[1])
-                        g_mask = np.logical_and(layer_values[:, 1] >= g_range[0], layer_values[:, 1] <= g_range[1])
-                        r_mask = np.logical_and(layer_values[:, 2] >= r_range[0], layer_values[:, 2] <= r_range[1])
-                        mask = np.logical_and(np.logical_and(b_mask, g_mask), r_mask)
-                        plt.hist(layer_values[mask, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.5, label=layer_code)
-                    plt.title(f"{'BGR'[j]} Channel")
-                    plt.ylim(0, 1000)
-                    plt.xlim(0, 256)
-                    plt.legend()
-                plt.tight_layout()
-                plt.show()
-    
-    b_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='B Range:', continuous_update=False)
-    g_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='G Range:', continuous_update=False)
-    r_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='R Range:', continuous_update=False)
-    
-    widgets.interactive(update_histogram, b_range=b_slider, g_range=g_slider, r_range=r_slider)
+    plt.figure(figsize=(15, 5))
+    layer_colors = ['b', 'g', 'r', 'm','k', 'orange', 'lime', 'pink']
+    num_channels = 3
+    for j in range(num_channels):
+        plt.subplot(1, num_channels, j+1)
+        for idx, (layer_code, layer_values) in enumerate(v_set.items()):
+            color_idx = idx % len(layer_colors)
+            plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.5, label=layer_code)
+        plt.title(f"{'BGR'[j]} Channel")
+        plt.ylim(0, 1000)
+        plt.xlim(0, 256)
+        plt.legend()
+    plt.tight_layout()
+    plt.savefig('resultant_histogram.png')
+    plt.show()
+    return v_set
 
 def display_images(segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks):
     segmented_images_list = []
@@ -217,20 +260,24 @@ def rebuild_images(v_set, images, masks):
     except Exception as e:
         traceback.print_exc()  
         return None, None
-    
+
 train_images, train_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
 test_images, test_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
 
-train_images  = [train_images[0]]
+train_images  = [train_images[0]] 
 train_masks = [train_masks[0]]
 test_images = [test_images[0]]
 test_masks = [test_masks[0]]
 
 v_set, segmented_images, segmented_masks = cca(train_images, train_masks)
-rebuild_segmented_images, rebuild_segmented_masks = rebuild_images(v_set, test_images, test_masks)
 
 display_histograms(v_set)
 display_resultant_histogram(v_set)
+v_set = input_refine_layer(v_set)
+display_histograms(v_set)
+display_resultant_histogram(v_set)
+rebuild_segmented_images, rebuild_segmented_masks = rebuild_images(v_set, test_images, test_masks)
+
 print_table(v_set)
 display_images(segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks)
 
