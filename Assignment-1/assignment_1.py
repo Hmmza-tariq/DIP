@@ -44,50 +44,47 @@ def remove_background(image, mask):
         return None
 
 def display_histograms(v_set):
+    plt.figure(figsize=(10, 8))
+    i = 1
+    for layer_code, layer_values in v_set.items():
+        for j in range(3):
+            plt.subplot(5, 3, i)
+            plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=['b', 'g', 'r'][j], alpha=0.5)
+            plt.title(f"{layer_code} - {'BGR'[j]}")
+            plt.ylim(0, 800)
+            plt.xlim(0, 256)
+            i += 1
 
+    plt.tight_layout()
+    plt.show()
+
+def display_resultant_histogram(v_set):
     def update_histogram(b_range, g_range, r_range):
-            plt.figure(figsize=(15, 5))
-            layer_colors = ['b', 'g', 'r', 'm']
-            num_layers = len(v_set)
-            num_channels = 3
-            for j in range(num_channels):
-                plt.subplot(1, num_channels, j+1)
-                for idx, (layer_code, layer_values) in enumerate(v_set.items()):
-                    color_idx = idx % len(layer_colors)
-                    b_mask = np.logical_and(layer_values[:, 0] >= b_range[0], layer_values[:, 0] <= b_range[1])
-                    g_mask = np.logical_and(layer_values[:, 1] >= g_range[0], layer_values[:, 1] <= g_range[1])
-                    r_mask = np.logical_and(layer_values[:, 2] >= r_range[0], layer_values[:, 2] <= r_range[1])
-                    mask = np.logical_and(np.logical_and(b_mask, g_mask), r_mask)
-                    plt.hist(layer_values[mask, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.5, label=layer_code)
-                plt.title(f"{'BGR'[j]} Channel")
-                plt.ylim(0, 800)
-                plt.xlim(0, 256)
-                plt.legend()
-            plt.tight_layout()
-            plt.show()
+                plt.figure(figsize=(15, 10))
+                layer_colors = ['b', 'g', 'r', 'm', 'k', 'orange', 'lime', 'pink']
+                num_layers = len(v_set)
+                num_channels = 3
+                for j in range(num_channels):
+                    plt.subplot(1, num_channels, j+1)
+                    for idx, (layer_code, layer_values) in enumerate(v_set.items()):
+                        color_idx = idx % len(layer_colors)
+                        b_mask = np.logical_and(layer_values[:, 0] >= b_range[0], layer_values[:, 0] <= b_range[1])
+                        g_mask = np.logical_and(layer_values[:, 1] >= g_range[0], layer_values[:, 1] <= g_range[1])
+                        r_mask = np.logical_and(layer_values[:, 2] >= r_range[0], layer_values[:, 2] <= r_range[1])
+                        mask = np.logical_and(np.logical_and(b_mask, g_mask), r_mask)
+                        plt.hist(layer_values[mask, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.5, label=layer_code)
+                    plt.title(f"{'BGR'[j]} Channel")
+                    plt.ylim(0, 1000)
+                    plt.xlim(0, 256)
+                    plt.legend()
+                plt.tight_layout()
+                plt.show()
     
     b_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='B Range:', continuous_update=False)
     g_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='G Range:', continuous_update=False)
     r_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='R Range:', continuous_update=False)
     
     widgets.interactive(update_histogram, b_range=b_slider, g_range=g_slider, r_range=r_slider)
-
-def display_resultant_histogram(v_set):
-    plt.figure(figsize=(15, 5))
-    layer_colors = ['b', 'g', 'r', 'm', 'y', 'k', 'orange', 'lime', 'pink']
-    num_layers = len(v_set)
-    num_channels = 3
-    for j in range(num_channels):
-        plt.subplot(1, num_channels, j+1)
-        for idx, (layer_code, layer_values) in enumerate(v_set.items()):
-            color_idx = idx % len(layer_colors)
-            plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.5, label=layer_code)
-        plt.title(f"{'BGR'[j]} Channel")
-        plt.ylim(0, 800)
-        plt.xlim(0, 256)
-        plt.legend()
-    plt.tight_layout()
-    plt.show()
 
 def display_images(segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks):
     segmented_images_list = []
@@ -128,13 +125,13 @@ def print_table(v_set):
         table.append([layer, len(values)])
     print(tabulate(table, headers=["Layer", "Unique Intensities"]))
 
-def cca(original_images, mask_images, test_img, test_mask):
+def cca(images, masks):
     try:
         i = 0
-        for img, mask in zip(original_images, mask_images):
+        for image, mask in zip(images, masks):
             i += 1
-            img = remove_background(img,mask)
-            if img is None or mask is None:
+            image = remove_background(image,mask)
+            if image is None or mask is None:
                 raise ValueError("One or both of the images could not be loaded.")
 
             color_codes = {
@@ -155,16 +152,16 @@ def cca(original_images, mask_images, test_img, test_mask):
             for x in range(mask.shape[0]):
                 for y in range(mask.shape[1]):
                     pixel = tuple(mask[x, y])
-                    intensity = img[x, y]
+                    intensity = image[x, y]
                     for color, layer in color_codes.items():
                         if layer == 'BKG':
                             continue
                         elif pixel == color:
                             v_set[layer].append(intensity)
                             if layer not in segmented_images:
-                                segmented_images[layer] = np.zeros_like(img)
+                                segmented_images[layer] = np.zeros_like(image)
                                 segmented_masks[layer] = np.zeros_like(mask)
-                            segmented_images[layer][x, y] = img[x, y]
+                            segmented_images[layer][x, y] = image[x, y]
                             segmented_masks[layer][x, y] = mask[x, y]
                             break
 
@@ -177,47 +174,61 @@ def cca(original_images, mask_images, test_img, test_mask):
                 v_set[layer] = np.unique(values, axis=0)
 
 
-        test_img = remove_background(test_img, test_mask)
-        rebuild_segmented_images = {layer: np.zeros_like(test_img) for layer in v_set}
-        rebuild_segmented_masks = {layer: np.zeros_like(test_mask) for layer in v_set}
 
-
-        for x in range(test_img.shape[0]):
-            for y in range(test_img.shape[1]):
-                img_intensity = test_img[x, y]
-                for layer, intensities in v_set.items():
-                    if np.any(img_intensity == intensities):
-                        if layer in rebuild_segmented_images:
-                            rebuild_segmented_images[layer][x, y] = test_img[x, y]
-                        else:
-                            rebuild_segmented_images[layer] = np.zeros_like(test_img)
-                        break
-
-        for x in range(test_mask.shape[0]):
-            for y in range(test_mask.shape[1]):
-                mask_intensity = test_mask[x, y]
-                for layer, intensities in v_set.items():
-                    if  np.any(mask_intensity in intensities):
-                        if layer in rebuild_segmented_masks:
-                            rebuild_segmented_masks[layer][x, y] = test_mask[x, y]
-                        else:
-                            rebuild_segmented_masks[layer] = np.zeros_like(test_mask)                          
-                        break
-
-        return v_set, segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks
+        return v_set, segmented_images, segmented_masks
 
     except Exception as e:
         traceback.print_exc()  
         return None, None, None
 
-original_images, mask_images = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
-original_images  = [ original_images[0]]
-mask_images = [mask_images[0]]
+def rebuild_images(v_set, images, masks):
+    i = 0
+    try:
+        for image, mask in zip(images, masks):
+            i += 1
+            image = remove_background(image, mask)
+            rebuild_segmented_images = {layer: np.zeros_like(image) for layer in v_set}
+            rebuild_segmented_masks = {layer: np.zeros_like(mask) for layer in v_set}
+            for x in range(image.shape[0]):
+                for y in range(image.shape[1]):
+                    img_intensity = image[x, y]
+                    for layer, intensities in v_set.items():
+                        if np.any(img_intensity == intensities):
+                            if layer in rebuild_segmented_images:
+                                rebuild_segmented_images[layer][x, y] = image[x, y]
+                            else:
+                                rebuild_segmented_images[layer] = np.zeros_like(image)
+                            break
+            
+            for x in range(mask.shape[0]):
+                for y in range(mask.shape[1]):
+                    mask_intensity = mask[x, y]
+                    for layer, intensities in v_set.items():
+                        if  np.any(mask_intensity in intensities):
+                            if layer in rebuild_segmented_masks:
+                                rebuild_segmented_masks[layer][x, y] = mask[x, y]
+                            else:
+                                rebuild_segmented_masks[layer] = np.zeros_like(mask)                          
+                            break
+            print('Rebuilt Images: ', i)
+            
+        return rebuild_segmented_images, rebuild_segmented_masks
+    
+    except Exception as e:
+        traceback.print_exc()  
+        return None, None
+    
+train_images, train_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
 test_images, test_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
-test_img = test_images[0]
-test_mask = test_masks[0]
 
-v_set, segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks = cca(original_images, mask_images, test_img, test_mask)
+train_images  = [train_images[0]]
+train_masks = [train_masks[0]]
+test_images = [test_images[0]]
+test_masks = [test_masks[0]]
+
+v_set, segmented_images, segmented_masks = cca(train_images, train_masks)
+rebuild_segmented_images, rebuild_segmented_masks = rebuild_images(v_set, test_images, test_masks)
+
 display_histograms(v_set)
 display_resultant_histogram(v_set)
 print_table(v_set)
