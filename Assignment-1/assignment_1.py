@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 from tabulate import tabulate
 import traceback
 import os
-
+import ipywidgets as widgets
+from IPython.display import display
 
 def read_images_from_folders(tissue_folder, mask_folder):
     original_images = []
@@ -43,23 +44,37 @@ def remove_background(image, mask):
         return None
 
 def display_histograms(v_set):
-    plt.figure(figsize=(10, 8))
-    i = 1
-    for layer_code, layer_values in v_set.items():
-        for j in range(3):
-            plt.subplot(5, 3, i)
-            plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=['b', 'g', 'r'][j], alpha=0.5)
-            plt.title(f"{layer_code} - {'BGR'[j]}")
-            plt.ylim(0, 800)
-            plt.xlim(0, 256)
-            i += 1
 
-    plt.tight_layout()
-    plt.show()
+    def update_histogram(b_range, g_range, r_range):
+            plt.figure(figsize=(15, 5))
+            layer_colors = ['b', 'g', 'r', 'm']
+            num_layers = len(v_set)
+            num_channels = 3
+            for j in range(num_channels):
+                plt.subplot(1, num_channels, j+1)
+                for idx, (layer_code, layer_values) in enumerate(v_set.items()):
+                    color_idx = idx % len(layer_colors)
+                    b_mask = np.logical_and(layer_values[:, 0] >= b_range[0], layer_values[:, 0] <= b_range[1])
+                    g_mask = np.logical_and(layer_values[:, 1] >= g_range[0], layer_values[:, 1] <= g_range[1])
+                    r_mask = np.logical_and(layer_values[:, 2] >= r_range[0], layer_values[:, 2] <= r_range[1])
+                    mask = np.logical_and(np.logical_and(b_mask, g_mask), r_mask)
+                    plt.hist(layer_values[mask, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.5, label=layer_code)
+                plt.title(f"{'BGR'[j]} Channel")
+                plt.ylim(0, 800)
+                plt.xlim(0, 256)
+                plt.legend()
+            plt.tight_layout()
+            plt.show()
+    
+    b_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='B Range:', continuous_update=False)
+    g_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='G Range:', continuous_update=False)
+    r_slider = widgets.FloatRangeSlider(value=[0, 255], min=0, max=255, step=1, description='R Range:', continuous_update=False)
+    
+    widgets.interactive(update_histogram, b_range=b_slider, g_range=g_slider, r_range=r_slider)
 
 def display_resultant_histogram(v_set):
     plt.figure(figsize=(15, 5))
-    layer_colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'orange', 'lime', 'pink']
+    layer_colors = ['b', 'g', 'r', 'm', 'y', 'k', 'orange', 'lime', 'pink']
     num_layers = len(v_set)
     num_channels = 3
     for j in range(num_channels):
@@ -118,6 +133,7 @@ def cca(original_images, mask_images, test_img, test_mask):
         i = 0
         for img, mask in zip(original_images, mask_images):
             i += 1
+            img = remove_background(img,mask)
             if img is None or mask is None:
                 raise ValueError("One or both of the images could not be loaded.")
 
@@ -130,7 +146,7 @@ def cca(original_images, mask_images, test_img, test_mask):
             }
 
             v_set = {
-                'DEJ': [], 'DRM': [], 'EPI': [], 'KER': [], 'BKG': []
+                'DEJ': [], 'DRM': [], 'EPI': [], 'KER': []
             }
             
             segmented_images = {}
@@ -141,7 +157,9 @@ def cca(original_images, mask_images, test_img, test_mask):
                     pixel = tuple(mask[x, y])
                     intensity = img[x, y]
                     for color, layer in color_codes.items():
-                        if pixel == color:
+                        if layer == 'BKG':
+                            continue
+                        elif pixel == color:
                             v_set[layer].append(intensity)
                             if layer not in segmented_images:
                                 segmented_images[layer] = np.zeros_like(img)
@@ -158,7 +176,8 @@ def cca(original_images, mask_images, test_img, test_mask):
         for layer, values in v_set.items():
                 v_set[layer] = np.unique(values, axis=0)
 
-        
+
+        test_img = remove_background(test_img, test_mask)
         rebuild_segmented_images = {layer: np.zeros_like(test_img) for layer in v_set}
         rebuild_segmented_masks = {layer: np.zeros_like(test_mask) for layer in v_set}
 
@@ -191,11 +210,10 @@ def cca(original_images, mask_images, test_img, test_mask):
         traceback.print_exc()  
         return None, None, None
 
-
 original_images, mask_images = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
 original_images  = [ original_images[0]]
 mask_images = [mask_images[0]]
-test_images, test_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Test/Mask/')
+test_images, test_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
 test_img = test_images[0]
 test_mask = test_masks[0]
 
