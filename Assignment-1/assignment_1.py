@@ -21,81 +21,131 @@ def read_images_from_folders(tissue_folder, mask_folder):
         mask_images.append(mask_img)
     return original_images, mask_images
 
-def remove_background(image, mask):
+def save_v_set(v_set, filename):
     try:
-        if image is None or mask is None:
-            raise ValueError("One or both of the images could not be loaded.")
-        mask_gray = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_gray, connectivity=8)
-        largest_label = 1
-        max_area = stats[largest_label, cv2.CC_STAT_AREA]
-        for label in range(2, num_labels):
+        with open(filename, 'w') as file:
+            for layer, values in v_set.items():
+                file.write(f"{layer}:\n")
+                for value in values:
+                    file.write(','.join(map(str, value)) + '\n')
+                file.write('\n')
+        print(f"v_set saved to {filename} successfully.")
+    except Exception as e:
+        print(f"Error saving v_set: {e}")
+
+def read_v_set(filename):
+    v_set = {}
+    try:
+        with open(filename, 'r') as file:
+            lines = file.readlines()
+            i = 0
+            while i < len(lines):
+                layer = lines[i].strip(': \n')[0:3]
+                values = []
+                i += 1
+                while i < len(lines) and lines[i] != '\n':
+                    value = list(map(int, lines[i].strip().split(',')))
+                    values.append(value)
+                    i += 1
+                v_set[layer] = np.array(values)
+                i += 1
+        print(f"v_set loaded from {filename} successfully.")
+        return v_set
+    except Exception as e:
+        print(f"Error reading v_set: {e}")
+        return None        
+  
+def save_image(image, path):
+    try:
+        directory = os.path.dirname(path)
+        filename = os.path.basename(path)
+        os.makedirs(directory, exist_ok=True)
+        filepath = os.path.join(directory, filename)
+        cv2.imwrite(filepath, image)
+        print(f"Image saved successfully as '{filepath}'.")
+    except Exception as e:
+        print(f"Error saving image: {e}")
+
+def write_dice_coefficients_to_file(dice_coefficients, filename):
+    try:
+        with open(filename, 'w') as file:
+            for i, coefficient in enumerate(dice_coefficients):
+                file.write(f"Image {i+1}: {coefficient}\n")
+        print(f"Dice coefficients written to '{filename}' successfully.")
+    except Exception as e:
+        print(f"Error writing Dice coefficients to file: {e}")
+
+def remove_background(image):
+    try:
+        if image is None:
+            raise ValueError("Image could not be loaded.")
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        ret, thresh = cv2.threshold(gray_image, 250, 255, cv2.THRESH_BINARY)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh, connectivity=8)
+        max_area_label = 1
+        max_area = -1
+        for label in range(1, num_labels):
             area = stats[label, cv2.CC_STAT_AREA]
             if area > max_area:
-                largest_label = label
                 max_area = area
-        largest_component_mask = (labels == largest_label).astype(np.uint8)
-        result_image = cv2.bitwise_and(image, image, mask=largest_component_mask)
+                max_area_label = label
+        mask = np.uint8(labels == max_area_label) * 255
+        mask = cv2.bitwise_not(mask)
+        result_image = cv2.bitwise_and(image, image, mask=mask)
+        # cv2.imshow('Result Image', result_image)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
         return result_image
     except Exception as e:
         print(f"Error: {e}")
         return None
 
-def refine_layer(v_set, code, min_intensity, max_intensity):
-    layer_values = []
-    try:
-        for i in range(len(v_set[code])):  
-            for j in range(len(v_set[code][i])):  
-              if np.all(v_set[code][i] >= min_intensity) and np.all(v_set[code][i] <= max_intensity):
-                layer_values.append(v_set[code][i])
-                break
+    #  for code, layer_values in v_set.items():
+    #         min = [0, 0, 0]
+    #         max = [256, 256, 256]
+    #         if code == 'DEJ':
+    #             min = [239, 100, 157]
+    #             max = [256, 175, 211]
+    #         elif code == 'DRM':
+    #             min = [197, 148, 211]
+    #             max = [239, 256, 256]
+    #         elif code == 'EPI':
+    #             min = [220, 25, 143]
+    #             max = [242, 90, 177]
+    #         elif code == 'KER':
+    #             min = [238, 90, 167]
+    #             max = [256, 248, 233]
+    #         v_set[code] = v_set[code][(v_set[code] >= min).all(axis=1) & (v_set[code] <= max).all(axis=1)]   
 
-        v_set[code] = np.array(layer_values)       
-        display_histograms(v_set)
+def refine_layer(v_set):
+    try:
+        for code, layer_values in v_set.items():
+            most_common_values = []
+            unique_values, counts = np.unique(layer_values, axis=0, return_counts=True)
+            sorted_indices = np.argsort(counts)[::-1]  
+            for idx in sorted_indices:
+                intensity = unique_values[idx]
+                if counts[idx] > 1:
+                    most_common_values.append(intensity)
+                if len(most_common_values) >= 50: 
+                    break
+            v_set[code] = np.array(most_common_values)
     except Exception as e:
         print(f"Error: {e}")
     return v_set
-def input_refine_layer(v_set):
-    try:
-        img = cv2.imread('resultant_histogram.png')
-        cv2.imshow('Resultant Histogram', img)
-        for layer_code, layer_values in v_set.items():
-            if layer_code == 'DEJ':
-                min_b = 241
-                max_b = 256
-                min_g = 99
-                max_g = 183
-                min_r = 174
-                max_r = 256
-            elif layer_code == 'DRM':
-                min_b = 197
-                max_b = 249
-                min_g = 90
-                max_g = 214
-                min_r = 171
-                max_r = 249
-            elif layer_code == 'EPI':
-                min_b = 214
-                max_b = 242
-                min_g = 25
-                max_g = 90
-                min_r = 113
-                max_r = 182
-            elif layer_code == 'KER':
-                min_b = 200
-                max_b = 256
-                min_g = 65
-                max_g = 95
-                min_r = 78
-                max_r = 135
-            v_set = refine_layer(v_set, layer_code, [min_b, min_g, min_r], [max_b, max_g, max_r])
-        cv2.destroyAllWindows()
-        return v_set
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
+
+def smooth_image(image):
+    # Convert image to grayscale
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-def display_histograms(v_set):
+    _, binary_mask = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY)
+    kernel = np.ones((10, 10), np.uint8)
+    closed_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+    smoothed_image = cv2.bitwise_and(image, image, mask=closed_mask)
+    
+    return smoothed_image
+
+def display_histograms(v_set,height,name):
     plt.figure(figsize=(10, 8))
     i = 1
     for layer_code, layer_values in v_set.items():
@@ -103,64 +153,38 @@ def display_histograms(v_set):
             plt.subplot(5, 3, i)
             plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=['b', 'g', 'r'][j], alpha=0.5)
             plt.title(f"{layer_code} - {'BGR'[j]}")
-            plt.ylim(0, 500)
+            plt.ylim(0, height)
             plt.xlim(0, 256)
             i += 1
 
     plt.tight_layout()
-    plt.savefig('histograms.png')
+    plt.savefig(name)
     plt.show()
     
-def display_resultant_histogram(v_set):
+def display_resultant_histogram(v_set, height,name):
+    color_codes = {
+        (255, 172, 255): 'DEJ',  
+        (0, 255, 190): 'DRM',  
+        (160, 48, 112): 'EPI',  
+        (224, 224, 224): 'KER',  
+        (0, 0, 0): 'BKG'  
+    }
+    layer_colors = [(color[2]/255, color[1]/255, color[0]/255) for color in color_codes.keys()]
     plt.figure(figsize=(15, 5))
-    layer_colors = ['b', 'g', 'r', 'm','k', 'orange', 'lime', 'pink']
     num_channels = 3
     for j in range(num_channels):
         plt.subplot(1, num_channels, j+1)
         for idx, (layer_code, layer_values) in enumerate(v_set.items()):
             color_idx = idx % len(layer_colors)
-            plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.5, label=layer_code)
+            plt.hist(layer_values[:, j], bins=256, range=(0, 256), color=layer_colors[color_idx], alpha=0.6, label=layer_code)
         plt.title(f"{'BGR'[j]} Channel")
-        plt.ylim(0, 1000)
+        plt.ylim(0, height)
         plt.xlim(0, 256)
         plt.legend()
     plt.tight_layout()
-    plt.savefig('resultant_histogram.png')
+    plt.savefig(name)
     plt.show()
     return v_set
-
-def display_images(segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks):
-    segmented_images_list = []
-    segmented_masks_list = []
-    rebuild_segmented_images_list = []
-    rebuild_segmented_masks_list = []
-    for layer, segmented_image in segmented_images.items():     
-        segmented_images_list.append(segmented_image)       
-        rebuild_segmented_image = rebuild_segmented_images.get(layer, np.zeros_like(segmented_image))        
-        rebuild_segmented_images_list.append(rebuild_segmented_image)
-        segmented_mask = segmented_masks.get(layer, np.zeros_like(segmented_image))        
-        segmented_masks_list.append(segmented_mask)
-        rebuild_segmented_mask = rebuild_segmented_masks.get(layer, np.zeros_like(segmented_image))        
-        rebuild_segmented_masks_list.append(rebuild_segmented_mask)
-
-    segmented_images_combined = np.hstack(segmented_images_list)
-    segmented_masks_combined = np.hstack(segmented_masks_list)
-    rebuild_segmented_images_combined = np.hstack(rebuild_segmented_images_list)
-    rebuild_segmented_masks_combined = np.hstack(rebuild_segmented_masks_list)
-   
-    grid_image = np.vstack((segmented_images_combined, segmented_masks_combined, rebuild_segmented_images_combined, rebuild_segmented_masks_combined))
-
-    
-    screen_height, screen_width = np.array(grid_image.shape[:2]) * 0.4 
-
-    if grid_image.shape[0] > screen_height or grid_image.shape[1] > screen_width:
-        scale_factor = min(screen_height / grid_image.shape[0], screen_width / grid_image.shape[1])
-        grid_image = cv2.resize(grid_image, (0, 0), fx=scale_factor, fy=scale_factor)
-
-    cv2.imshow("Segmented and Masked Images", grid_image)
-
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
 def print_table(v_set):
     table = []
@@ -173,7 +197,6 @@ def cca(images, masks):
         i = 0
         for image, mask in zip(images, masks):
             i += 1
-            image = remove_background(image,mask)
             if image is None or mask is None:
                 raise ValueError("One or both of the images could not be loaded.")
 
@@ -189,97 +212,106 @@ def cca(images, masks):
                 'DEJ': [], 'DRM': [], 'EPI': [], 'KER': []
             }
             
-            segmented_images = {}
-            segmented_masks = {}
-
             for x in range(mask.shape[0]):
                 for y in range(mask.shape[1]):
                     pixel = tuple(mask[x, y])
                     intensity = image[x, y]
-                    for color, layer in color_codes.items():
-                        if layer == 'BKG':
-                            continue
-                        elif pixel == color:
-                            v_set[layer].append(intensity)
-                            if layer not in segmented_images:
-                                segmented_images[layer] = np.zeros_like(image)
-                                segmented_masks[layer] = np.zeros_like(mask)
-                            segmented_images[layer][x, y] = image[x, y]
-                            segmented_masks[layer][x, y] = mask[x, y]
-                            break
+                    if pixel == (0, 0, 0):
+                        continue
+                    elif pixel in color_codes.keys():
+                        layer = color_codes[pixel]
+                        v_set[layer].append(intensity)
+
 
             for layer, values in v_set.items():
                 v_set[layer] = np.unique(values, axis=0)
+                v_set[layer] = np.array(values)
+            
 
             print('Segmented and Masked Images: ', i)
 
         for layer, values in v_set.items():
-                v_set[layer] = np.unique(values, axis=0)
+            v_set[layer] = np.unique(values, axis=0)
+            v_set[layer] = np.array(values)
 
-
-
-        return v_set, segmented_images, segmented_masks
+        return v_set
 
     except Exception as e:
         traceback.print_exc()  
         return None, None, None
 
-def rebuild_images(v_set, images, masks):
+def build_mask(v_set, images):
+    masked_images = []
     i = 0
     try:
-        for image, mask in zip(images, masks):
+        for image in images:
             i += 1
-            image = remove_background(image, mask)
-            rebuild_segmented_images = {layer: np.zeros_like(image) for layer in v_set}
-            rebuild_segmented_masks = {layer: np.zeros_like(mask) for layer in v_set}
+            image = remove_background(image)
+            masked_image = np.zeros_like(image, dtype=np.uint8)
             for x in range(image.shape[0]):
                 for y in range(image.shape[1]):
-                    img_intensity = image[x, y]
-                    for layer, intensities in v_set.items():
-                        if np.any(img_intensity == intensities):
-                            if layer in rebuild_segmented_images:
-                                rebuild_segmented_images[layer][x, y] = image[x, y]
-                            else:
-                                rebuild_segmented_images[layer] = np.zeros_like(image)
-                            break
-            
-            for x in range(mask.shape[0]):
-                for y in range(mask.shape[1]):
-                    mask_intensity = mask[x, y]
-                    for layer, intensities in v_set.items():
-                        if  np.any(mask_intensity in intensities):
-                            if layer in rebuild_segmented_masks:
-                                rebuild_segmented_masks[layer][x, y] = mask[x, y]
-                            else:
-                                rebuild_segmented_masks[layer] = np.zeros_like(mask)                          
-                            break
-            print('Rebuilt Images: ', i)
-            
-        return rebuild_segmented_images, rebuild_segmented_masks
-    
+                    intensity = image[x, y]
+                    for layer, values in v_set.items():
+                        if tuple(intensity) in v_set['DRM']:
+                            masked_image[x, y] = [0, 255, 190]
+                        elif tuple(intensity) in v_set['DEJ']:
+                            masked_image[x, y] = [255, 172, 255]
+                        elif tuple(intensity) in v_set['EPI']:
+                            masked_image[x, y] = [160, 48, 112]
+                        elif tuple(intensity) in v_set['KER']:
+                            masked_image[x, y] = [224, 224, 224]
+            masked_image = smooth_image(masked_image)
+            masked_images.append(masked_image)
+            save_image(masked_image, f"Assignment-1/Results/Masked Image {i}.png")
+            print(f"Masked Image {i} saved successfully.")
+            # cv2.imshow('Segmented and Masked Images',masked_image)
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
+        return masked_images
     except Exception as e:
-        traceback.print_exc()  
-        return None, None
+        print(f"Error in build_mask: {e}")
+        return None
+
+def compute_dice_coefficient(rebuild_masks, original_masks):
+    dice_coefficients = []
+    for rebuild_mask, original_mask in zip(rebuild_masks, original_masks):
+        true = 0
+        false = 0
+        for x in range(rebuild_mask.shape[0]):
+            for y in range(rebuild_mask.shape[1]):
+                if np.any(rebuild_mask[x, y] == original_mask[x, y]):
+                    true += 1
+                else:
+                    false += 1
+
+        dice_coefficient = (true) / (true + false)
+    dice_coefficients.append(dice_coefficient * 100)
+
+    write_dice_coefficients_to_file(dice_coefficients, 'dice_coefficients.txt')
+
+    return dice_coefficients
+
 
 train_images, train_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
-test_images, test_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
+test_images, test_masks = read_images_from_folders('Assignment-1/Test/Tissue/', 'Assignment-1/Test/Mask/')
 
-train_images  = [train_images[0]] 
-train_masks = [train_masks[0]]
-test_images = [test_images[0]]
-test_masks = [test_masks[0]]
+# train_images = [train_images[0]]
+# train_masks = [train_masks[0]]
+# test_images = [test_images[0]]
+# test_masks = [test_images[0]]
+# v_set = cca(train_images, train_masks)
+# save_v_set(v_set, 'v_set.txt')
+v_set = read_v_set('v_set.txt')
+# display_histograms(v_set,400, 'individual_histogram_before_refinement.png')
+# display_resultant_histogram(v_set, 1000, 'histogram_before_refinement.png')
+v_set = refine_layer(v_set)
+# display_histograms(v_set,20, 'individual_histogram_after_refinement.png')
+# display_resultant_histogram(v_set, 50, 'histogram_after_refinement.png')
+rebuild_masks = build_mask(v_set, test_images)
 
-v_set, segmented_images, segmented_masks = cca(train_images, train_masks)
+# print_table(v_set)
 
-display_histograms(v_set)
-display_resultant_histogram(v_set)
-v_set = input_refine_layer(v_set)
-display_histograms(v_set)
-display_resultant_histogram(v_set)
-rebuild_segmented_images, rebuild_segmented_masks = rebuild_images(v_set, test_images, test_masks)
 
-print_table(v_set)
-display_images(segmented_images, segmented_masks, rebuild_segmented_images, rebuild_segmented_masks)
-
+compute_dice_coefficient(rebuild_masks, test_masks)
 
     
