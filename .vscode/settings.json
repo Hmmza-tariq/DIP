@@ -1,8 +1,13 @@
 {
     "cSpell.words": [
+        "arange",
         "argwhere",
+        "astype",
+        "cumsum",
         "figsize",
+        "fromarray",
         "imread",
-        "imshow"
+        "imshow",
+        "interp"
     ]
 }

@@ -75,6 +75,16 @@ def write_dice_coefficients_to_file(dice_coefficients, filename):
     except Exception as e:
         print(f"Error writing Dice coefficients to file: {e}")
 
+def read_images_from_folder(folder_path):
+    images = []
+    file_names = os.listdir(folder_path)
+    file_names.sort()
+    for file_name in file_names:
+        file_path = os.path.join(folder_path, file_name)
+        image = cv2.imread(file_path, cv2.IMREAD_COLOR)
+        images.append(image)
+    return images
+
 def remove_background(image):
     try:
         if image is None:
@@ -135,9 +145,7 @@ def refine_layer(v_set):
     return v_set
 
 def smooth_image(image):
-    # Convert image to grayscale
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
     _, binary_mask = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY)
     kernel = np.ones((10, 10), np.uint8)
     closed_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
@@ -264,9 +272,9 @@ def build_mask(v_set, images):
             masked_images.append(masked_image)
             save_image(masked_image, f"Assignment-1/Results/Masked Image {i}.png")
             print(f"Masked Image {i} saved successfully.")
-            # cv2.imshow('Segmented and Masked Images',masked_image)
-            # cv2.waitKey(0)
-            # cv2.destroyAllWindows()
+            cv2.imshow('Segmented and Masked Images',masked_image)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
         return masked_images
     except Exception as e:
         print(f"Error in build_mask: {e}")
@@ -275,43 +283,45 @@ def build_mask(v_set, images):
 def compute_dice_coefficient(rebuild_masks, original_masks):
     dice_coefficients = []
     for rebuild_mask, original_mask in zip(rebuild_masks, original_masks):
-        true = 0
-        false = 0
-        for x in range(rebuild_mask.shape[0]):
-            for y in range(rebuild_mask.shape[1]):
-                if np.any(rebuild_mask[x, y] == original_mask[x, y]):
-                    true += 1
-                else:
-                    false += 1
+        true = np.sum(np.logical_and(rebuild_mask, original_mask))
+        false = np.sum(np.logical_xor(rebuild_mask, original_mask))
+        dice_coefficient = (2.0 * true) / (2.0 * true + false)
+        dice_coefficients.append(dice_coefficient * 100)
 
-        dice_coefficient = (true) / (true + false)
-    dice_coefficients.append(dice_coefficient * 100)
-
-    write_dice_coefficients_to_file(dice_coefficients, 'dice_coefficients.txt')
-
-    return dice_coefficients
+    avg = sum(dice_coefficients) / len(dice_coefficients)
+    print(f"Average Dice Coefficient: {avg:.2f}%")
+    return (dice_coefficients)
 
 
 train_images, train_masks = read_images_from_folders('Assignment-1/Train/Tissue/', 'Assignment-1/Train/Mask/')
 test_images, test_masks = read_images_from_folders('Assignment-1/Test/Tissue/', 'Assignment-1/Test/Mask/')
 
-# train_images = [train_images[0]]
-# train_masks = [train_masks[0]]
-# test_images = [test_images[0]]
-# test_masks = [test_images[0]]
-# v_set = cca(train_images, train_masks)
-# save_v_set(v_set, 'v_set.txt')
+train_images = [train_images[0]]
+train_masks = [train_masks[0]]
+test_images = [test_images[0]]
+test_masks = [test_images[0]]
+
+v_set = cca(train_images, train_masks)
+save_v_set(v_set, 'v_set.txt')
 v_set = read_v_set('v_set.txt')
-# display_histograms(v_set,400, 'individual_histogram_before_refinement.png')
-# display_resultant_histogram(v_set, 1000, 'histogram_before_refinement.png')
+display_histograms(v_set,400, 'individual_histogram_before_refinement.png')
+display_resultant_histogram(v_set, 1000, 'histogram_before_refinement.png')
 v_set = refine_layer(v_set)
-# display_histograms(v_set,20, 'individual_histogram_after_refinement.png')
-# display_resultant_histogram(v_set, 50, 'histogram_after_refinement.png')
+display_histograms(v_set,20, 'individual_histogram_after_refinement.png')
+display_resultant_histogram(v_set, 50, 'histogram_after_refinement.png')
 rebuild_masks = build_mask(v_set, test_images)
 
-# print_table(v_set)
+print_table(v_set)
 
 
-compute_dice_coefficient(rebuild_masks, test_masks)
+original_mask_folder = 'Assignment-1/Test/Mask/'
+masked_images_folder = 'Assignment-1/Results/'
+
+original_masks = read_images_from_folder(original_mask_folder)
+masked_images = read_images_from_folder(masked_images_folder)
+original_masks_binary = [(mask > 0).astype(np.uint8) for mask in original_masks]
+masked_images_binary = [(mask > 0).astype(np.uint8) for mask in masked_images]
+dice_coefficients = compute_dice_coefficient(masked_images_binary, original_masks_binary)
+write_dice_coefficients_to_file(dice_coefficients, 'dice_coefficients.txt')
 
     
