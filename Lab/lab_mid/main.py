@@ -67,5 +67,3 @@ english_text = braille_to_text(image_path)
 print("English Text:")
 print(english_text)
 
-
-
