@@ -1,6 +1,7 @@
 {
     "cSpell.words": [
         "arange",
+        "argmin",
         "argwhere",
         "astype",
         "cumsum",
@@ -9,6 +10,10 @@
         "imread",
         "imshow",
         "interp",
+        "linalg",
+        "Sobel",
+        "sobelx",
+        "sobely",
         "thresholded"
     ]
 }
