@@ -109,7 +109,7 @@ def draw_brightest_spots(image, brightest_spots):
         cv2.circle(image, spot, 5, (0, 255, 0), -1)
 
 def display(images, figure_name='Figure'):
-    plt.figure(figsize=(15, 5))
+    plt.figure(figsize=(16, 4))
     for i in range(len(images)):
         plt.subplot(1, len(images), i+1)
         plt.imshow(cv2.cvtColor(images[i], cv2.COLOR_BGR2RGB), aspect='equal')
@@ -133,8 +133,8 @@ radius = 50
 # images = [image for image,name in zip(images,names) if "test" in name] 
 # names = [name for name in names if "test" in name]
 
-# images = [image for image,name in zip(images,names) if "1ffa" in name]            
-# names = [name for name in names if "1ffa" in name]
+images = [image for image,name in zip(images,names) if "1ffa" in name]            
+names = [name for name in names if "1ffa" in name]
 
 # images = images[:1]
 # names = names[:1]
@@ -153,9 +153,5 @@ for path,name in zip(images,names):
     result_image = circle_brightest_spot(image, best_spot, radius)
     draw_brightest_spots(image_with_spots, brightest_spots)
     display([image_with_spots,vessels,intersection_point_image,result_image],name)
-    # cv2.imshow(name+" Brightest Spots", image_with_spots)
-    # cv2.imshow(name, result_image)
-    # cv2.imshow(name + ' nerves', vessels)                                              
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+
 
