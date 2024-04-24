@@ -1,33 +1,31 @@
 import cv2
 import numpy as np
 
-def custom_erosion(image, kernel_size):
-    pad_height = kernel_size // 2
-    pad_width = kernel_size // 2
-    padded_image = np.pad(image, ((pad_height, pad_height), (pad_width, pad_width)), mode='constant')
-    output_image = np.zeros_like(image)
-    for i in range(image.shape[0]):
-        for j in range(image.shape[1]):
-            pxl = padded_image[i:i + kernel_size, j:j + kernel_size]
-            if np.all(pxl == 255):  
-                output_image[i, j] = 255  
-            else:
-                output_image[i, j] = 0  
-    return output_image
+def custom_erosion(image, kernel):
+    _, image = cv2.threshold(image, 120, 255, cv2.THRESH_BINARY)
+    padding = kernel.shape[0] // 2
+    image = cv2.copyMakeBorder(image, padding, padding, padding, padding, cv2.BORDER_CONSTANT, None, value=0)
+    eroded_image = np.zeros((image.shape[0], image.shape[1]), dtype=np.uint8)
+    for i in range(padding, image.shape[0]-padding):
+        for j in range(padding, image.shape[1] - padding):
+            if np.count_nonzero(np.multiply(image[i-padding:i+padding+1, j-padding:j+padding+1], kernel)) == np.count_nonzero(kernel):
+                eroded_image[i, j] = 255
 
-def custom_dilation(image, kernel_size):
-    pad_height = kernel_size // 2
-    pad_width = kernel_size // 2
-    padded_image = np.pad(image, ((pad_height, pad_height), (pad_width, pad_width)), mode='constant')
-    output_image = np.zeros_like(image)
-    for i in range(image.shape[0]):
-        for j in range(image.shape[1]):
-            pxl = padded_image[i:i + kernel_size, j:j + kernel_size]
-            if np.any(pxl == 255):  
-                output_image[i, j] = 255  
-            else:
-                output_image[i, j] = 0 
-    return output_image
+    return eroded_image[padding:image.shape[0]-padding, padding:image.shape[1]-padding]
+
+def custom_dilation(image, kernel):
+    _, image = cv2.threshold(image, 120, 255, cv2.THRESH_BINARY)
+    padding = kernel.shape[0] // 2
+    image = cv2.copyMakeBorder(image, padding, padding, padding, padding, cv2.BORDER_CONSTANT, None, value=0)
+    dilated_image = np.zeros((image.shape[0], image.shape[1]), dtype=np.uint8)
+    for i in range(padding, image.shape[0]-padding):
+        for j in range(padding, image.shape[1] - padding):
+            if np.count_nonzero(np.multiply(image[i-padding:i+padding+1, j-padding:j+padding+1], kernel)) > 0:
+                dilated_image[i, j] = 255
+
+    return dilated_image[padding:image.shape[0]-padding, padding:image.shape[1]-padding]
+
+
 
 
 def count_balls(image):
@@ -37,47 +35,47 @@ def count_balls(image):
 
     return num_balls
 
+
 # task 1
-# image = cv2.imread('Lab/images/lab_9_1.png', cv2.IMREAD_GRAYSCALE)
-# eroded_image = custom_erosion(image, kernel_size=19)
-# num_balls = count_balls(eroded_image)
-# cv2.imshow('Original Image', image)
-# cv2.imshow('Eroded Image', eroded_image)
-# print("Total number of balls after erosion:", num_balls)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
+kernel = np.ones((19, 19)) * 255
+image = cv2.imread('Lab/images/lab_9_1.png', cv2.IMREAD_GRAYSCALE)
+eroded_image = custom_erosion(image, kernel)
+num_balls = count_balls(eroded_image)
+cv2.imshow('Original Image', image)
+cv2.imshow('Eroded Image', eroded_image)
+print("Total number of balls after erosion:", num_balls)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
 # task 2
+kernel = np.ones((3, 3)) * 255
 image = cv2.imread('Lab/images/lab_9_2.jpg', cv2.IMREAD_GRAYSCALE)
-eroded_image = custom_erosion(image, kernel_size=3)
-dilated_image = custom_dilation(eroded_image, kernel_size=3)
+eroded_image = custom_erosion(image, kernel)
+dilated_image = custom_dilation(eroded_image, kernel)
 
 cv2.imshow('Original Image', image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
 cv2.imshow('After noise removal', eroded_image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
 cv2.imshow('After filling gaps', dilated_image)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
 
 # task 3
-# image = cv2.imread('Lab/images/lab_9_3.jpg', cv2.IMREAD_GRAYSCALE)
-# eroded_image = custom_erosion(image, kernel_size=3)
-# dilated_image = custom_dilation(image, kernel_size=3)
-# morphological_gradient = dilated_image - eroded_image
-# cv2.imshow('Original Image', image)
-# cv2.imshow('Eroded Image', eroded_image)
-# cv2.imshow('Dilated Image', dilated_image)
-# cv2.imshow('Morphological Gradient', morphological_gradient)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
+image = cv2.imread('Lab/images/lab_9_3.jpg', cv2.IMREAD_GRAYSCALE)
+eroded_image = custom_erosion(image, kernel)
+dilated_image = custom_dilation(image, kernel)
+morphological_gradient = dilated_image - eroded_image
+cv2.imshow('Original Image', image)
+cv2.imshow('Eroded Image', eroded_image)
+cv2.imshow('Dilated Image', dilated_image)
+cv2.imshow('Morphological Gradient', morphological_gradient)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
 # task 4
-image = cv2.imread('Lab/images/lab_9_4.jpg', cv2.IMREAD_GRAYSCALE)
-opening = custom_dilation(custom_erosion(image, kernel_size=19), kernel_size=19)
-topHat = cv2.subtract(image, opening)
+kernel = np.ones((25, 25)) * 255
+image = cv2.imread('Lab/images/lab_9_4.jpg', 0  )
+opening = custom_dilation(custom_erosion(image, kernel), kernel)
+topHat = image- opening
 cv2.imshow('Original Image', image)
 cv2.imshow('Top-hat Transformation', topHat)
 cv2.waitKey(0)
