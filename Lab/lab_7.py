@@ -3,37 +3,37 @@ import cv2
 import numpy as np
 
 # task 1
-# image = cv2.imread('Lab/images/lab_7_1.jpg', cv2.IMREAD_GRAYSCALE)
+image = cv2.imread('Lab/images/lab_7_1.jpg', cv2.IMREAD_GRAYSCALE)
 
-# sobelx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=5)
-# sobely = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=5)
+sobelx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=5)
+sobely = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=5)
 
-# magnitude = np.sqrt(sobelx**2 + sobely**2)
+magnitude = np.sqrt(sobelx**2 + sobely**2)
 
-# magnitude /= np.max(magnitude)
-
-
-# top_30_percent = np.percentile(magnitude, 70)
-
-# magnitude_thresholded = np.where(magnitude >= top_30_percent, magnitude, 0)
-
-# phase = np.arctan2(sobely, sobelx)
-# phase_degrees = np.degrees(phase)
-
-# phase_45 = np.where(np.logical_and(phase_degrees >= 40, phase_degrees <= 50), magnitude, 0)
-# phase_90 = np.where(np.logical_or(np.logical_and(phase_degrees >= 80, phase_degrees <= 100),
-#                                   np.logical_and(phase_degrees >= -10, phase_degrees <= 10)), magnitude, 0)
+magnitude /= np.max(magnitude)
 
 
-# cv2.imshow('Magnitude', magnitude_thresholded)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
-# cv2.imshow('45 Degrees', phase_45)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
-# cv2.imshow('90 Degrees', phase_90)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
+top_30_percent = np.percentile(magnitude, 70)
+
+magnitude_thresholded = np.where(magnitude >= top_30_percent, magnitude, 0)
+
+phase = np.arctan2(sobely, sobelx)
+phase_degrees = np.degrees(phase)
+
+phase_45 = np.where(np.logical_and(phase_degrees >= 40, phase_degrees <= 50), magnitude, 0)
+phase_90 = np.where(np.logical_or(np.logical_and(phase_degrees >= 80, phase_degrees <= 100),
+                                  np.logical_and(phase_degrees >= -10, phase_degrees <= 10)), magnitude, 0)
+
+
+cv2.imshow('Magnitude', magnitude_thresholded)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+cv2.imshow('45 Degrees', phase_45)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+cv2.imshow('90 Degrees', phase_90)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
 # task 2
 # image = cv2.imread('Lab/images/lab_7_2.png', cv2.IMREAD_GRAYSCALE)
