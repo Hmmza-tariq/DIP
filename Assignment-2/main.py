@@ -133,8 +133,8 @@ radius = 50
 # images = [image for image,name in zip(images,names) if "test" in name] 
 # names = [name for name in names if "test" in name]
 
-images = [image for image,name in zip(images,names) if "1ffa" in name]            
-names = [name for name in names if "1ffa" in name]
+# images = [image for image,name in zip(images,names) if "1ffa" in name]            
+# names = [name for name in names if "1ffa" in name]
 
 # images = images[:1]
 # names = names[:1]
