@@ -30,9 +30,12 @@ def read_image_centers(file_path):
     return  centers
 
 def pre_process_image(image, new_size=(512, 512)):
+    original_size = image.shape[:2]
+    target_size = new_size 
+    scaling_factor = (target_size[1] / original_size[1], target_size[0] / original_size[0]) 
     resized_image = cv2.resize(image, new_size)
     normalized_image = cv2.normalize(resized_image, None, 0, 255, cv2.NORM_MINMAX)
-    return normalized_image
+    return normalized_image, scaling_factor
 
 def extract_vessels(image, s=2500):
     structure_element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -47,19 +50,19 @@ def extract_vessels(image, s=2500):
             connected_edges[labels == label] = 0
     output = cv2.erode(cv2.dilate(connected_edges, structure_element), structure_element)
     num_vessels = cv2.countNonZero(connected_edges)
-    print("Number of vessels found:", num_vessels)
+    # print('number of vessels found: ', num_vessels)
     if num_vessels < 6000:
         if s < 500:
-            print('less vessels found, s < 500 ')
-            return output
+            # print('less vessels found, s < 500 ')
+            return output,num_vessels
         elif s < 1100:
-            print('less vessels found, s < 1100')
-            output = extract_vessels(image, s-500)
+            # print('less vessels found, s < 1100')
+            output,num_vessels = extract_vessels(image, s-500)
         else:
-            print('less vessels found, s = 2500')
-            output = extract_vessels(image, s-1500)
+            # print('less vessels found, s = 2500')
+            output,num_vessels = extract_vessels(image, s-1500)
 
-    return output
+    return output, num_vessels
 
 def find_brightest_spots(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -104,8 +107,6 @@ def find_optic_disk(image, brightest_spots,intersection_point, radius):
             "vessel_count": 0,
             "distance_from_intersection": 0,
             "neighbor_spots": 0,
-            "qualified_first_test": False,
-            "qualified_second_test": False
         }
 
         masked_image = mask_circle(image, spot, radius)
@@ -114,8 +115,6 @@ def find_optic_disk(image, brightest_spots,intersection_point, radius):
         vessel_count = cv2.countNonZero(masked_image)
         distance_from_intersection = float('inf')
         neighbor_spots = 0;
-        qualified_first_test = False
-        qualified_second_test = False
 
         if intersection_point is not None:
             distance_from_intersection = np.sqrt((spot[0] - intersection_point[0])**2 + (spot[1] - intersection_point[1])**2)
@@ -130,44 +129,30 @@ def find_optic_disk(image, brightest_spots,intersection_point, radius):
                         neighbor_spots += 1
 
             if neighbor_spots > len(brightest_spots)/2.5:
-                qualified_first_test = True
+                center = intersection_point
                 skip = True
 
         if skip is not True:
             if vessel_count > max_vessel_count:
                 max_vessel_count = vessel_count
-                qualified_second_test = True
 
         info["center"] = center
         info["intensity"] = intensity
         info["vessel_count"] = vessel_count
         info["distance_from_intersection"] = distance_from_intersection
         info["neighbor_spots"] = neighbor_spots
-        info["qualified_first_test"] = qualified_first_test
-        info["qualified_second_test"] = qualified_second_test
         list_of_info.append(info)
     return  list_of_info 
 
 def find_best_spot(info):
     info = sorted(info, key=lambda x: (x["vessel_count"], x['intensity'], x["distance_from_intersection"], x['neighbor_spots']), reverse=True)
-    print_info_table(info)
-
-    return info[0]["center"]
-    for spot in info:
-        if spot["qualified_first_test"] and spot["qualified_second_test"]:
-            return spot["center"]
-    for spot in info:
-        if spot["qualified_second_test"]:
-            return spot["center"]
-    for spot in info:
-        if spot["qualified_first_test"]:
-            return spot["center"]
+    return info[0]["center"],info
 
 def circle_brightest_spot(image, brightest_spot, radius):
     image = image.copy()
     cv2.circle(image, brightest_spot, radius, (0, 0, 255), 4)
-    cross_size = 5
-    cross_thickness = 2
+    cross_size = int(radius/10)
+    cross_thickness = int(radius/25)
     cross_color = (0, 255, 0) 
     center_x, center_y = brightest_spot
     cv2.line(image, (center_x - cross_size, center_y), (center_x + cross_size, center_y), cross_color, cross_thickness)
@@ -197,31 +182,34 @@ def display(images, figure_name):
             plt.title('Vessels')
         elif i == 2:
             plt.title('Intersection Point')
+        elif i == 3:
+            plt.title('Derived Result Image')
         else:
-            plt.title('Result Image')
+            plt.title('Actual Result Image')
         plt.suptitle(figure_name, fontsize=16)
         plt.axis('off')
     plt.tight_layout()  
     plt.show()
+    plt.savefig(figure_name + '.png')
 
 def print_info_table(list_of_info):
     print("Optic Disk Information:")
-    print("{:<20} {:<30} {:<15} {:<30} {:<20} {:<20} {:<25}".format("Center", "Intensity", "Vessel Count", "Distance from Intersection", "Neighbor Spots", "Qualified First Test", "Qualified Second Test"))
+    print("{:<15} {:<15} {:<15} {:<15} {:<15} ".format("Center", "Intensity", "Vessel Count", "Dst from IP", "Nbr Spots"))
     for info in list_of_info:
         center = info["center"]
-        intensity = info["intensity"]
+        intensity =  round(info["intensity"], 2)
         vessel_count = info["vessel_count"]
-        distance_from_intersection = info["distance_from_intersection"]
+        distance_from_intersection = round(info["distance_from_intersection"])
         neighbor_spots = info["neighbor_spots"]
-        qualified_first_test = info["qualified_first_test"]
-        qualified_second_test = info["qualified_second_test"]
 
         center_str = f"({center[0]}, {center[1]})" 
-        print("{:<20} {:<30} {:<15} {:<30} {:<20} {:<20} {:<25}".format(center_str,intensity, vessel_count, distance_from_intersection, neighbor_spots, qualified_first_test, qualified_second_test))
+        print("{:<15} {:<15} {:<15} {:<15} {:<15} ".format(center_str,intensity, vessel_count, distance_from_intersection, neighbor_spots,))
+    print('----------------------------------------------------')
 
 
 images,names = read_images_from_folders("Assignment-2/Fundus-image")
 centers = read_image_centers("Assignment-2/optic_disc_centres.csv")
+distances = []
 radius = 50
 # images = [image for image,name in zip(images,names) if "test" in name] 
 # names = [name for name in names if "test" in name]
@@ -233,18 +221,35 @@ radius = 50
 # names = names[:1]
 
 for path,name,center in zip(images,names,centers):
-    image = pre_process_image(cv2.imread(path))
+    main_image = cv2.imread(path)
+    image,scaling_factor = pre_process_image(main_image)
     intersection_point_image = image.copy()
     image_with_spots = image.copy()
-    vessels = extract_vessels(image)
+    vessels,num_vessels = extract_vessels(image)
     brightest_spots = find_brightest_spots(image)
     intersection_point = find_intersection_point(vessels)
     if intersection_point:
         cv2.circle(intersection_point_image, intersection_point, 5, (255, 0, 0), -1)    
     info = find_optic_disk(vessels, brightest_spots,intersection_point, radius)
-    best_spot = find_best_spot(info)
-    print("Optic Disk Center:", best_spot)
-    result_image = circle_brightest_spot(image, best_spot, radius)
+    best_spot,info = find_best_spot(info)
+    derived_result_image = circle_brightest_spot(image, best_spot, radius)
     draw_brightest_spots(image_with_spots, brightest_spots)
-    display([image_with_spots, vessels, intersection_point_image, result_image], name + '-' +str(best_spot) + '-' + str(center) )
+    best_spot_scaled = (int( best_spot[0]/scaling_factor[0] ), int( best_spot[1]/scaling_factor[1] ))  
+    actual_radius = radius
+    if center[0] > 1000:
+        actual_radius = int(radius * (center[0]/300))
+    actual_result_image = circle_brightest_spot(main_image, center, actual_radius)
+    distance = np.sqrt((best_spot_scaled[0] - center[0])**2 + (best_spot_scaled[1] - center[1])**2)
+    distances.append(distance)
+    display([image_with_spots, vessels, intersection_point_image, derived_result_image,actual_result_image],'Name: ' +  name + '\nDerived center: ' + str(best_spot_scaled) + '\nActual center: ' + str(center) + '\nDistance: ' + str(round(distance,2)) )
+    print_info_table(info)
+
+print("Distances:")
+print("{:<20} {:<20} {:<20}".format("Image", "Derived optical center", "Distance", "Distance"))
+for i, (path, name, center) in enumerate(zip(images, names, centers)):
+    print("{:<20} {:<20} {:<20}".format(name, distances[i], (distances[i] - radius) / radius * 100))
+
+# Calculate and display percentage error
+total_percentage_error = (sum(distances) - radius * len(distances)) / (radius * len(distances)) * 100
+print("\nPercentage Error: {:.2f}%".format(total_percentage_error))
 
