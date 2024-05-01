@@ -18,14 +18,15 @@ def read_images_from_folders(folder_path):
 
 def pre_process_image(image, new_size=(512, 512)):
     resized_image = cv2.resize(image, new_size)
-    return resized_image
+    normalized_image = cv2.normalize(resized_image, None, 0, 255, cv2.NORM_MINMAX)
+    return normalized_image
 
 def extract_vessels(image, s=2500):
     structure_element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     min_component_area = s
     grayscale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blur_image = cv2.GaussianBlur(grayscale_image, (5, 5), 0)
-    edges = cv2.Canny(blur_image, 30, 10)
+    edges = cv2.Canny(blur_image, 30, 20)
     connected_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, structure_element)
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(connected_edges, connectivity=8, ltype=cv2.CV_32S)
     for label in range(1, num_labels):
@@ -79,7 +80,7 @@ def find_optic_disk(image, brightest_spots,intersection_point, radius):
         vessel_count = cv2.countNonZero(masked_image)
         distance = np.sqrt((spot[0] - intersection_point[0])**2 + (spot[1] - intersection_point[1])**2)
         if distance < radius:
-            return intersection_point
+            return spot
         if vessel_count > max_vessel_count:
             max_vessel_count = vessel_count
             best_spot = spot
@@ -127,6 +128,49 @@ def display(images, figure_name='Figure'):
     plt.show()
 
 
+def identify_major_colors(image, num_colors=3):
+    # Convert image from BGR to RGB
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    # Reshape the image to a 2D array of pixels
+    pixels = rgb_image.reshape(-1, 3)
+
+    # Perform k-means clustering to identify major colors
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)
+    _, labels, centers = cv2.kmeans(pixels.astype(np.float32), num_colors, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+
+    # Convert centers to uint8
+    centers = np.uint8(centers)
+
+    # Return major colors
+    return centers
+
+def create_image_with_colors(colors, image_shape):
+    # Create a blank image
+    new_image = np.zeros(image_shape, dtype=np.uint8)
+
+    # Assign each pixel the color from the major colors
+    for i, color in enumerate(colors):
+        new_image[:, :, i % 3] += color[i]
+
+    return new_image
+
+def display_2(images, figure_name='Figure'):
+    plt.figure(figsize=(16, 4))
+    for i in range(len(images)):
+        plt.subplot(1, len(images), i+1)
+        plt.imshow(images[i])
+        if i == 0:
+            plt.title('Original Image')
+        elif i == 1:
+            plt.title('Major Colors')
+        elif i == 2:
+            plt.title('New Image')
+        plt.suptitle(figure_name, fontsize=16)
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+
 images,names = read_images_from_folders("Assignment-2/Fundus-image")
 radius = 50
 
@@ -152,6 +196,8 @@ for path,name in zip(images,names):
     best_spot = find_optic_disk(vessels, brightest_spots,intersection_point, radius)
     result_image = circle_brightest_spot(image, best_spot, radius)
     draw_brightest_spots(image_with_spots, brightest_spots)
-    display([image_with_spots,vessels,intersection_point_image,result_image],name)
-
+    major_colors = identify_major_colors(image)
+    new_image = create_image_with_colors(major_colors, image.shape)
+    display([image_with_spots, vessels, intersection_point_image, result_image, new_image], name)
+    display([image, major_colors.reshape(1, -1, 3), new_image], name)
 
