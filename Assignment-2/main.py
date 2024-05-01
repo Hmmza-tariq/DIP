@@ -1,5 +1,6 @@
 import os
 import cv2
+import csv
 import numpy as np
 from matplotlib.image import imread
 import matplotlib.pyplot as plt
@@ -34,12 +35,10 @@ def pre_process_image(image, new_size=(512, 512)):
     target_size = new_size 
     scaling_factor = (target_size[1] / original_size[1], target_size[0] / original_size[0]) 
     resized_image = cv2.resize(image, new_size)
-    normalized_image = cv2.normalize(resized_image, None, 0, 255, cv2.NORM_MINMAX)
-    return normalized_image, scaling_factor
+    return resized_image, scaling_factor
 
-def extract_vessels(image, s=2500):
+def extract_vessels(image, min_component_area=2500):
     structure_element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    min_component_area = s
     grayscale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blur_image = cv2.GaussianBlur(grayscale_image, (5, 5), 0)
     edges = cv2.Canny(blur_image, 30, 20)
@@ -48,19 +47,19 @@ def extract_vessels(image, s=2500):
     for label in range(1, num_labels):
         if stats[label, cv2.CC_STAT_AREA] < min_component_area:
             connected_edges[labels == label] = 0
-    output = cv2.erode(cv2.dilate(connected_edges, structure_element), structure_element)
+    output = connected_edges
     num_vessels = cv2.countNonZero(connected_edges)
     # print('number of vessels found: ', num_vessels)
     if num_vessels < 6000:
-        if s < 500:
+        if min_component_area < 500:
             # print('less vessels found, s < 500 ')
             return output,num_vessels
-        elif s < 1100:
+        elif min_component_area < 1100:
             # print('less vessels found, s < 1100')
-            output,num_vessels = extract_vessels(image, s-500)
+            output,num_vessels = extract_vessels(image, min_component_area-500)
         else:
             # print('less vessels found, s = 2500')
-            output,num_vessels = extract_vessels(image, s-1500)
+            output,num_vessels = extract_vessels(image, min_component_area-1500)
 
     return output, num_vessels
 
@@ -96,7 +95,7 @@ def find_intersection_point(image):
             return intersection_point
     return None
 
-def find_optic_disk(image, brightest_spots,intersection_point, radius):
+def analyze_data(image, brightest_spots,intersection_point,count, radius):
     max_vessel_count = -1
     list_of_info = []
     skip = False
@@ -113,6 +112,7 @@ def find_optic_disk(image, brightest_spots,intersection_point, radius):
         center = spot
         intensity = np.mean(masked_image)
         vessel_count = cv2.countNonZero(masked_image)
+        # print("Vessel Count: ",vessel_count, "Count: ", count)
         distance_from_intersection = float('inf')
         neighbor_spots = 0;
 
@@ -192,7 +192,6 @@ def display(images, title,name, save_path):
     plt.savefig(save_path + "/" + name + ".png" )
     plt.show()
 
-
 def print_info_table(list_of_info):
     print("Optic Disk Information:")
     print("{:<15} {:<15} {:<15} {:<15} {:<15} ".format("Center", "Intensity", "Vessel Count", "Dst from IP", "Nbr Spots"))
@@ -223,31 +222,37 @@ radius = 50
 # names = names[:1]
 
 for path,name,center in zip(images,names,actual_centers):
-    main_image = cv2.imread(path)
-    image,scaling_factor = pre_process_image(main_image)
-    intersection_point_image = image.copy()
-    image_with_spots = image.copy()
-    vessels,num_vessels = extract_vessels(image)
-    brightest_spots = find_brightest_spots(image)
+    image = cv2.imread(path)
+    preprocessed_image,scaling_factor = pre_process_image(image)
+    intersection_point_image = preprocessed_image.copy()
+    image_with_spots = preprocessed_image.copy()
+    vessels,num_vessels = extract_vessels(preprocessed_image)
+    brightest_spots = find_brightest_spots(preprocessed_image)
     intersection_point = find_intersection_point(vessels)
     if intersection_point:
         cv2.circle(intersection_point_image, intersection_point, 5, (255, 0, 0), -1)    
-    info = find_optic_disk(vessels, brightest_spots,intersection_point, radius)
+    info = analyze_data(vessels, brightest_spots,intersection_point,num_vessels, radius)
     best_spot,info = find_best_spot(info)
-    derived_result_image = circle_brightest_spot(image, best_spot, radius)
+    derived_result_image = circle_brightest_spot(preprocessed_image, best_spot, radius)
     draw_brightest_spots(image_with_spots, brightest_spots)
     best_spot_scaled = (int( best_spot[0]/scaling_factor[0] ), int( best_spot[1]/scaling_factor[1] ))  
     actual_radius = radius
     if center[0] > 1000:
         actual_radius = int(radius * (center[0]/300))
-    actual_result_image = circle_brightest_spot(main_image, center, actual_radius)
-    distance = np.sqrt((best_spot_scaled[0] - center[0])**2 + (best_spot_scaled[1] - center[1])**2)
-    distances.append(str(round(distance,2)))
+    actual_result_image = circle_brightest_spot(image, center, actual_radius)
+    distance = round(np.sqrt((best_spot_scaled[0] - center[0])**2 + (best_spot_scaled[1] - center[1])**2),2)
+    distances.append(distance)
     derived_centers.append(best_spot_scaled)
-    # display([image_with_spots, vessels, intersection_point_image, derived_result_image,actual_result_image],'Name: ' +  name + '\nDerived center: ' + str(best_spot_scaled) + '\nActual center: ' + str(center) + '\nDistance: ' + str(distance),name,"Assignment-2/Result" )
-    # print_info_table(info)
+    display([image_with_spots, vessels, intersection_point_image, derived_result_image,actual_result_image],'Name: ' +  name + '\nDerived center: ' + str(best_spot_scaled) + '\nActual center: ' + str(center) + '\nDistance: ' + str(distance),name,"Assignment-2/Result" )
+    print_info_table(info)
 
 print("Distances:")
 print("{:<20} {:<20} {:<20} {:<20}".format("Image", "Derived OC", "Actual OC", "Distance"))
 for (name, derived_center, actual_center, distance) in zip(names,derived_centers, actual_centers,distances):
     print("{:<20} {:<20} {:<20} {:<20}".format(name, str(derived_center), str(actual_center) , str(distance)))
+with open("Assignment-2/resultant_optic_disc_centres.csv", mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["Image", "Derived OC", "Actual OC", "Distance"])
+    for name, derived_center, actual_center, distance in zip(names, derived_centers, actual_centers, distances):
+        writer.writerow([name, str(derived_center), str(actual_center), str(distance)])
+print("Results have been written to", "Assignment-2/resultant_optic_disc_centres.csv")
