@@ -171,7 +171,7 @@ def draw_brightest_spots(image, brightest_spots):
     for spot in brightest_spots:
         cv2.circle(image, spot, 5, (0, 255, 0), -1)
 
-def display(images, figure_name):
+def display(images, title,name, save_path):
     plt.figure(figsize=(16, 4))
     for i in range(len(images)):
         plt.subplot(1, len(images), i+1)
@@ -186,11 +186,12 @@ def display(images, figure_name):
             plt.title('Derived Result Image')
         else:
             plt.title('Actual Result Image')
-        plt.suptitle(figure_name, fontsize=16)
+        plt.suptitle(title, fontsize=16)
         plt.axis('off')
     plt.tight_layout()  
+    plt.savefig(save_path + "/" + name + ".png" )
     plt.show()
-    plt.savefig(figure_name + '.png')
+
 
 def print_info_table(list_of_info):
     print("Optic Disk Information:")
@@ -208,7 +209,8 @@ def print_info_table(list_of_info):
 
 
 images,names = read_images_from_folders("Assignment-2/Fundus-image")
-centers = read_image_centers("Assignment-2/optic_disc_centres.csv")
+actual_centers = read_image_centers("Assignment-2/optic_disc_centres.csv")
+derived_centers = []
 distances = []
 radius = 50
 # images = [image for image,name in zip(images,names) if "test" in name] 
@@ -220,7 +222,7 @@ radius = 50
 # images = images[:1]
 # names = names[:1]
 
-for path,name,center in zip(images,names,centers):
+for path,name,center in zip(images,names,actual_centers):
     main_image = cv2.imread(path)
     image,scaling_factor = pre_process_image(main_image)
     intersection_point_image = image.copy()
@@ -240,16 +242,12 @@ for path,name,center in zip(images,names,centers):
         actual_radius = int(radius * (center[0]/300))
     actual_result_image = circle_brightest_spot(main_image, center, actual_radius)
     distance = np.sqrt((best_spot_scaled[0] - center[0])**2 + (best_spot_scaled[1] - center[1])**2)
-    distances.append(distance)
-    display([image_with_spots, vessels, intersection_point_image, derived_result_image,actual_result_image],'Name: ' +  name + '\nDerived center: ' + str(best_spot_scaled) + '\nActual center: ' + str(center) + '\nDistance: ' + str(round(distance,2)) )
-    print_info_table(info)
+    distances.append(str(round(distance,2)))
+    derived_centers.append(best_spot_scaled)
+    # display([image_with_spots, vessels, intersection_point_image, derived_result_image,actual_result_image],'Name: ' +  name + '\nDerived center: ' + str(best_spot_scaled) + '\nActual center: ' + str(center) + '\nDistance: ' + str(distance),name,"Assignment-2/Result" )
+    # print_info_table(info)
 
 print("Distances:")
-print("{:<20} {:<20} {:<20}".format("Image", "Derived optical center", "Distance", "Distance"))
-for i, (path, name, center) in enumerate(zip(images, names, centers)):
-    print("{:<20} {:<20} {:<20}".format(name, distances[i], (distances[i] - radius) / radius * 100))
-
-# Calculate and display percentage error
-total_percentage_error = (sum(distances) - radius * len(distances)) / (radius * len(distances)) * 100
-print("\nPercentage Error: {:.2f}%".format(total_percentage_error))
-
+print("{:<20} {:<20} {:<20} {:<20}".format("Image", "Derived OC", "Actual OC", "Distance"))
+for (name, derived_center, actual_center, distance) in zip(names,derived_centers, actual_centers,distances):
+    print("{:<20} {:<20} {:<20} {:<20}".format(name, str(derived_center), str(actual_center) , str(distance)))
