@@ -189,7 +189,7 @@ def display(images, title,name, save_path):
         plt.suptitle(title, fontsize=16)
         plt.axis('off')
     plt.tight_layout()  
-    plt.savefig(save_path + "/" + name + ".png" )
+    # plt.savefig(save_path + "/" + name + ".png" )
     plt.show()
 
 def print_info_table(list_of_info):
@@ -250,9 +250,9 @@ print("Distances:")
 print("{:<20} {:<20} {:<20} {:<20}".format("Image", "Derived OC", "Actual OC", "Distance"))
 for (name, derived_center, actual_center, distance) in zip(names,derived_centers, actual_centers,distances):
     print("{:<20} {:<20} {:<20} {:<20}".format(name, str(derived_center), str(actual_center) , str(distance)))
-with open("Assignment-2/resultant_optic_disc_centres.csv", mode='w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(["Image", "Derived OC", "Actual OC", "Distance"])
-    for name, derived_center, actual_center, distance in zip(names, derived_centers, actual_centers, distances):
-        writer.writerow([name, str(derived_center), str(actual_center), str(distance)])
-print("Results have been written to", "Assignment-2/resultant_optic_disc_centres.csv")
+# with open("Assignment-2/resultant_optic_disc_centres.csv", mode='w', newline='') as file:
+#     writer = csv.writer(file)
+#     writer.writerow(["Image", "Derived OC", "Actual OC", "Distance"])
+#     for name, derived_center, actual_center, distance in zip(names, derived_centers, actual_centers, distances):
+#         writer.writerow([name, str(derived_center), str(actual_center), str(distance)])
+# print("Results have been written to", "Assignment-2/resultant_optic_disc_centres.csv")
