@@ -11,6 +11,7 @@
         "imshow",
         "interp",
         "linalg",
+        "skimage",
         "Sobel",
         "sobelx",
         "sobely",
