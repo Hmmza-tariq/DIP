@@ -38,3 +38,4 @@ plt.imshow(morph_image, cmap='gray')
 plt.show()
 # Save the final image
 cv2.imwrite('final_result.jpg', morph_image)
+
