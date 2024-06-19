@@ -13,26 +13,40 @@ from sklearn.model_selection import train_test_split
 def load_images_and_masks(data_dir):
     images = []
     labels = []
+    masks = []
     categories = ['safe', 'gun', 'knife']
     for category in categories:
         category_path = os.path.join(data_dir, category)
+        annotation_path = os.path.join(data_dir, 'annotations', category)
         for file in os.listdir(category_path):
             img_path = os.path.join(category_path, file)
+            annotation_file = file.replace('.jpg', '.png')  # Assuming annotation files are .png format
+            annotation_path_file = os.path.join(annotation_path, annotation_file)
             image = cv2.imread(img_path)
-            if image is not None:
-                images.append(image)
-                labels.append(category)
-    return images, labels
+            if category != 'safe' and not os.path.exists(annotation_path_file):
+                print(f"Warning: Mask file {annotation_path_file} does not exist.")
+                continue
 
-def extract_features(images):
+            if image is not None and (category == 'safe' or os.path.exists(annotation_path_file)):
+                mask = cv2.imread(annotation_path_file, 0) if category != 'safe' else np.ones(image.shape[:2], dtype=np.uint8) * 255
+                images.append(image)
+                masks.append(mask)
+                labels.append(category)
+    return images, masks, labels
+
+def extract_features(images, masks):
     features = []
-    for image in images:
+    for image, mask in zip(images, masks):
         if image.ndim == 3:
             image = rgb2gray(image)
         resized_image = cv2.resize(image, (128, 128))
+        resized_mask = cv2.resize(mask, (128, 128))
+        
+        # Apply mask to the image
+        masked_image = cv2.bitwise_and(resized_image, resized_image, mask=resized_mask)
         
         # Convert image to uint8
-        resized_image_uint8 = (resized_image * 255).astype(np.uint8)
+        resized_image_uint8 = (masked_image * 255).astype(np.uint8)
         
         # Edge features
         edges = cv2.Canny(resized_image_uint8, 100, 200)
@@ -65,16 +79,21 @@ def train_svm_classifier(features, labels):
     print(classification_report(y_test, y_pred))
     print('Confusion Matrix:')
     print(confusion_matrix(y_test, y_pred))
-    print('Accuracy:', accuracy_score(y_test, y_pred))
-    return clf, X_test, y_test, y_pred
+    accuracy = accuracy_score(y_test, y_pred)
+    print('Accuracy:', accuracy)
+    return clf, X_test, y_test, y_pred, accuracy
 
-def segment_image(image, clf):
+def segment_image(image, mask, clf):
     if image.ndim == 3:
         image = rgb2gray(image)
     resized_image = cv2.resize(image, (128, 128))
+    resized_mask = cv2.resize(mask, (128, 128))
+    
+    # Apply mask to the image
+    masked_image = cv2.bitwise_and(resized_image, resized_image, mask=resized_mask)
     
     # Convert image to uint8
-    resized_image_uint8 = (resized_image * 255).astype(np.uint8)
+    resized_image_uint8 = (masked_image * 255).astype(np.uint8)
     
     # Edge features
     edges = cv2.Canny(resized_image_uint8, 100, 200)
@@ -103,6 +122,7 @@ def segment_image(image, clf):
         for region in measure.regionprops(labels):
             minr, minc, maxr, maxc = region.bbox
             cv2.rectangle(output_image, (minc, minr), (maxc, maxr), (0, 255, 0), 2)
+            cv2.putText(output_image, prediction[0], (minc, minr - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         return output_image, prediction[0]
     return cv2.cvtColor((resized_image * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR), 'safe'
 
@@ -137,14 +157,20 @@ def save_confusion_matrix(y_test, y_pred, output_dir):
     ax.set_yticks(np.arange(len(labels)))
     ax.set_xticklabels(labels)
     ax.set_yticklabels(labels)
+    
+    # Display the numbers inside the matrix blocks
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            ax.text(j, i, conf_matrix[i, j], ha='center', va='center', color='black')
+
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
     plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'))
     plt.close()
 
-def plot_classification_report(y_test, y_pred, output_dir):
+def plot_classification_report(y_test, y_pred, output_dir, accuracy):
     report = classification_report(y_test, y_pred, output_dict=True)
-    
+    accuracy = round(accuracy, 2) * 100
     labels = list(report.keys())[:-3]  # Exclude 'accuracy', 'macro avg', and 'weighted avg'
     precision = [report[label]['precision'] for label in labels]
     recall = [report[label]['recall'] for label in labels]
@@ -162,10 +188,10 @@ def plot_classification_report(y_test, y_pred, output_dir):
     
     ax1.set_xlabel('Labels')
     ax1.set_ylabel('Scores')
-    ax1.set_title('Classification Report')
+    ax1.set_title('Classification Report ' + f'(Accuracy: {accuracy}%)')
     ax1.set_xticks(x)
     ax1.set_xticklabels(labels)
-    ax1.legend()
+    ax1.legend(loc='upper left')
     
     ax2 = ax1.twinx()
     ax2.plot(x, support, color='black', marker='o', linestyle='-', linewidth=2, label='Support')
@@ -175,9 +201,9 @@ def plot_classification_report(y_test, y_pred, output_dir):
     plt.savefig(os.path.join(output_dir, 'classification_report.png'))
     plt.close()
 
-def generate_segmentation_images(images, labels, classifier, output_dir):
-    for idx, (image, label) in enumerate(zip(images, labels)):
-        segmented_image, prediction = segment_image(image, classifier)
+def generate_segmentation_images(images, masks, labels, classifier, output_dir):
+    for idx, (image, mask, label) in enumerate(zip(images, masks, labels)):
+        segmented_image, prediction = segment_image(image, mask, classifier)
         
         # Resize the segmented image to match the original image's dimensions
         segmented_image_resized = cv2.resize(segmented_image, (image.shape[1], image.shape[0]))
@@ -187,7 +213,7 @@ def generate_segmentation_images(images, labels, classifier, output_dir):
         grid_image[:, :image.shape[1]] = image
         grid_image[:, image.shape[1]:] = segmented_image_resized
 
-        cv2.putText(grid_image, f'Prediction: {prediction}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(grid_image, f'Prediction: {prediction}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1)
         cv2.putText(grid_image, f'Actual: {label}', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
         # Save the grid image
@@ -213,25 +239,20 @@ def main():
     train_dir = os.path.join(base_dir, 'train')
     test_dir = os.path.join(base_dir, 'test')
     analytics_output_dir = os.path.join(base_dir, 'output/details')
-    output_dir = os.path.join(base_dir, 'output')
+    output_dir = os.path.join(base_dir, 'output/images')
     os.makedirs(analytics_output_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    train_images, train_labels = load_images_and_masks(train_dir)
-    test_images, test_labels = load_images_and_masks(test_dir)
+    train_images, train_masks, train_labels = load_images_and_masks(train_dir)
+    test_images, test_masks, test_labels = load_images_and_masks(test_dir)
 
-    train_features = extract_features(train_images)
+    train_features = extract_features(train_images, train_masks)
     
-    clf, X_test, y_test, y_pred = train_svm_classifier(train_features, train_labels)
+    clf, X_test, y_test, y_pred, accuracy = train_svm_classifier(train_features, train_labels)
     plot_metrics(y_test, y_pred, analytics_output_dir)
     save_confusion_matrix(y_test, y_pred, analytics_output_dir)
-    plot_classification_report(y_test, y_pred, analytics_output_dir)
-    generate_segmentation_images(test_images, test_labels, clf, output_dir)
-    display([os.path.join(analytics_output_dir, 'confusion_matrix.png'), 
-             os.path.join(analytics_output_dir, 'dice_coefficients.png'), 
-             os.path.join(analytics_output_dir, 'f1_scores.png'),
-             os.path.join(analytics_output_dir, 'classification_report.png')])
+    plot_classification_report(y_test, y_pred, analytics_output_dir , accuracy)
+    generate_segmentation_images(test_images, train_masks, test_labels, clf, output_dir)
     print("Analysis and image generation completed. Check the output folder.")
 
-if __name__ == "__main__":
-    main()
+main()
