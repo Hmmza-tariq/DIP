@@ -1,41 +1,160 @@
 import cv2
+import os
 import numpy as np
+from skimage.feature import hog
+from skimage.color import rgb2gray
+from sklearn.svm import SVC
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from skimage import measure
 
-# Load the images
-mask_image = cv2.imread('Assignment-1\Test\Tissue\RA23-01883-B1-2-PAS.[17408x1536].jpg', cv2.IMREAD_GRAYSCALE)
-live_image = cv2.imread('Assignment-1\Test\Tissue\RA23-01882-A1-1-PAS.[10240x2048].jpg', cv2.IMREAD_GRAYSCALE)
+def load_images_and_masks(data_dir):
+    images = []
+    labels = []
+    categories = ['safe', 'gun', 'knife']
+    for category in categories:
+        category_path = os.path.join(data_dir, category)
+        for file in os.listdir(category_path):
+            img_path = os.path.join(category_path, file)
+            image = cv2.imread(img_path)
+            if image is not None:
+                images.append(image)
+                labels.append(category)
+    return images, labels
 
-# Display the images
-plt.figure(figsize=(10, 5))
-plt.subplot(1, 2, 1)
-plt.title('Mask Image')
-plt.imshow(mask_image, cmap='gray')
-plt.subplot(1, 2, 2)
-plt.title('Live Image')
-plt.imshow(live_image, cmap='gray')
-plt.show()
-# Subtract the mask image from the live image
-subtracted_image = cv2.subtract(live_image, mask_image)
+def extract_hog_features(images):
+    hog_features = []
+    for image in images:
+        if image.ndim == 3:
+            image = rgb2gray(image)
+        resized_image = cv2.resize(image, (128, 128))
+        fd = hog(resized_image, orientations=9, pixels_per_cell=(8, 8),
+                 cells_per_block=(2, 2), visualize=False, feature_vector=True)
+        hog_features.append(fd)
+    return hog_features
 
-# Display the subtracted image
-plt.figure(figsize=(5, 5))
-plt.title('Subtracted Image')
-plt.imshow(subtracted_image, cmap='gray')
-plt.show()
-# Apply a binary threshold to enhance the visibility of blood vessels
-_, thresholded_image = cv2.threshold(subtracted_image, 50, 255, cv2.THRESH_BINARY)
+def train_svm_classifier(features, labels):
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
+    clf = SVC(kernel='linear', probability=True)
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    print('Classification Report:')
+    print(classification_report(y_test, y_pred))
+    print('Confusion Matrix:')
+    print(confusion_matrix(y_test, y_pred))
+    print('Accuracy:', accuracy_score(y_test, y_pred))
+    return clf, X_test, y_test, y_pred
 
-# Apply morphological operations to remove noise and enhance structures
-kernel = np.ones((3, 3), np.uint8)
-morph_image = cv2.morphologyEx(thresholded_image, cv2.MORPH_OPEN, kernel, iterations=2)
-morph_image = cv2.morphologyEx(morph_image, cv2.MORPH_CLOSE, kernel, iterations=2)
+def segment_image(image, clf):
+    if image.ndim == 3:
+        image = rgb2gray(image)
+    resized_image = cv2.resize(image, (128, 128))
+    fd = hog(resized_image, orientations=9, pixels_per_cell=(8, 8),
+             cells_per_block=(2, 2), visualize=False, feature_vector=True)
+    fd = fd.reshape(1, -1)
+    prediction = clf.predict(fd)
+    if prediction[0] != 'safe':
+        ret, thresh = cv2.threshold((resized_image * 255).astype(np.uint8), 128, 255, cv2.THRESH_BINARY)
+        labels = measure.label(thresh)
+        output_image = cv2.cvtColor((resized_image * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+        for region in measure.regionprops(labels):
+            minr, minc, maxr, maxc = region.bbox
+            cv2.rectangle(output_image, (minc, minr), (maxc, maxr), (0, 255, 0), 2)
+        return output_image, prediction[0]
+    return cv2.cvtColor((resized_image * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR), 'safe'
 
-# Display the post-processed image
-plt.figure(figsize=(5, 5))
-plt.title('Post-Processed Image')
-plt.imshow(morph_image, cmap='gray')
-plt.show()
-# Save the final image
-cv2.imwrite('final_result.jpg', morph_image)
+def plot_metrics(labels, predictions, output_dir):
+    f1 = f1_score(labels, predictions, average=None, labels=['gun', 'knife', 'safe'])
+    dice_coefficient = 2 * f1 / (1 + f1)
+    
+    plt.figure(figsize=(10, 5))
+    plt.bar(['gun', 'knife', 'safe'], f1, color='green')
+    plt.title('F1-score for each label')
+    plt.xlabel('Label')
+    plt.ylabel('F1-score')
+    plt.savefig(os.path.join(output_dir, 'f1_scores.png'))
+    plt.close()
 
+    plt.figure(figsize=(10, 5))
+    plt.bar(['gun', 'knife', 'safe'], dice_coefficient, color='blue')
+    plt.title('Dice Coefficient for each label')
+    plt.xlabel('Label')
+    plt.ylabel('Dice Coefficient')
+    plt.savefig(os.path.join(output_dir, 'dice_coefficients.png'))
+    plt.close()
+
+def save_confusion_matrix(y_test, y_pred, output_dir):
+    conf_matrix = confusion_matrix(y_test, y_pred)
+    fig, ax = plt.subplots()
+    cax = ax.matshow(conf_matrix, cmap=plt.cm.Blues)
+    plt.title('Confusion Matrix')
+    fig.colorbar(cax)
+    labels = ['safe', 'gun', 'knife']
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_yticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'))
+    plt.close()
+
+def generate_segmentation_images(images, labels, classifier, output_dir):
+    for idx, (image, label) in enumerate(zip(images, labels)):
+        segmented_image, prediction = segment_image(image, classifier)
+        
+        # Resize the segmented image to match the original image's dimensions
+        segmented_image_resized = cv2.resize(segmented_image, (image.shape[1], image.shape[0]))
+        
+        # Create grid image
+        grid_image = np.zeros((image.shape[0], image.shape[1] * 2, 3), dtype=np.uint8)
+        grid_image[:, :image.shape[1]] = image
+        grid_image[:, image.shape[1]:] = segmented_image_resized
+
+        cv2.putText(grid_image, f'Prediction: {prediction}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(grid_image, f'Actual: {label}', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+        cv2.imwrite(os.path.join(output_dir, f'segmented_grid_{label}_{idx}.png'), grid_image)
+
+        if idx < 10:
+            plt.figure(figsize=(10, 5))
+            plt.imshow(cv2.cvtColor(grid_image, cv2.COLOR_BGR2RGB))
+            plt.title(f'Segment Image {idx}: {label} ({prediction})')
+            plt.savefig(os.path.join(output_dir, f'segmented_display_{label}_{idx}.png'))
+            plt.close()
+
+def display(paths):
+    images = [cv2.imread(path) for path in paths]
+    plt.figure(figsize=(16, 4))
+    for i in range(len(images)):
+        plt.subplot(1, len(images), i+1)
+        plt.imshow(cv2.cvtColor(images[i], cv2.COLOR_BGR2RGB), aspect='equal')
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+def main():
+    base_dir = 'Project'  
+    train_dir = os.path.join(base_dir, 'train')
+    test_dir = os.path.join(base_dir, 'test')
+    output_dir = os.path.join(base_dir, 'output')
+    os.makedirs(output_dir, exist_ok=True)
+
+    train_images, train_labels = load_images_and_masks(train_dir)
+    test_images, test_labels = load_images_and_masks(test_dir)
+
+    train_features = extract_hog_features(train_images)
+    test_features = extract_hog_features(test_images)
+    
+    clf, X_test, y_test, y_pred = train_svm_classifier(train_features, train_labels)
+    plot_metrics(y_test, y_pred, output_dir)
+    save_confusion_matrix(y_test, y_pred, output_dir)
+    generate_segmentation_images(test_images, test_labels, clf, output_dir)
+    display([os.path.join(output_dir, 'confusion_matrix.png'), 
+             os.path.join(output_dir, 'dice_coefficients.png'), 
+             os.path.join(output_dir, 'f1_scores.png')])
+    print("Analysis and image generation completed. Check the output folder.")
+
+if __name__ == "__main__":
+    main()

@@ -1,179 +1,237 @@
-import os
 import cv2
+import os
 import numpy as np
-from sklearn.model_selection import train_test_split
+from skimage.color import rgb2gray
+from skimage.feature import local_binary_pattern
+from skimage import measure
+from skimage.feature import hog
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, confusion_matrix
-from sklearn.preprocessing import LabelEncoder
-from sklearn.decomposition import PCA
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
-# Paths to the directories
-base_dir = 'D:/Semester 6/DIP/DIP-code/Project'
-train_dir = os.path.join(base_dir, 'train')
-annotations_dir = os.path.join(train_dir, 'annotations')
-
-# Image size for resizing
-IMAGE_SIZE = (128, 128)
-
-# Function to load images and labels for classification
-def load_data():
-    object_classes = ['gun', 'knife', 'safe']  # Add 'shuriken' if applicable
-    data = []
+def load_images_and_masks(data_dir):
+    images = []
     labels = []
-
-    for object_class in object_classes:
-        class_dir = os.path.join(train_dir, object_class)
-        files = os.listdir(class_dir)
-        for file in files:
-            file_path = os.path.join(class_dir, file)
-            image = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+    categories = ['safe', 'gun', 'knife']
+    for category in categories:
+        category_path = os.path.join(data_dir, category)
+        for file in os.listdir(category_path):
+            img_path = os.path.join(category_path, file)
+            image = cv2.imread(img_path)
             if image is not None:
-                image_resized = cv2.resize(image, IMAGE_SIZE)
-                data.append(image_resized.flatten())
-                labels.append(object_class)
+                images.append(image)
+                labels.append(category)
+    return images, labels
 
-    return np.array(data), np.array(labels)
+def extract_features(images):
+    features = []
+    for image in images:
+        if image.ndim == 3:
+            image = rgb2gray(image)
+        resized_image = cv2.resize(image, (128, 128))
+        
+        # Convert image to uint8
+        resized_image_uint8 = (resized_image * 255).astype(np.uint8)
+        
+        # Edge features
+        edges = cv2.Canny(resized_image_uint8, 100, 200)
+        edge_hist = np.histogram(edges, bins=256, range=(0, 256))[0]
+        
+        # LBP features
+        lbp = local_binary_pattern(resized_image_uint8, P=8, R=1, method='uniform')
+        lbp_hist, _ = np.histogram(lbp, bins=np.arange(0, 10), range=(0, 9))
+        
+        # Hu moments
+        moments = cv2.moments(resized_image)
+        hu_moments = cv2.HuMoments(moments).flatten()
+        
+        # HOG features
+        fd = hog(resized_image, orientations=9, pixels_per_cell=(8, 8),
+                    cells_per_block=(2, 2), visualize=False, feature_vector=True)
+        
+        # Combine features
+        feature_vector = np.hstack((edge_hist, lbp_hist, hu_moments, fd))
+        features.append(feature_vector)
+        
+    return features
 
-# Load data and labels
-data, labels = load_data()
+def train_svm_classifier(features, labels):
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
+    clf = SVC(kernel='linear', probability=True)
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    print('Classification Report:')
+    print(classification_report(y_test, y_pred))
+    print('Confusion Matrix:')
+    print(confusion_matrix(y_test, y_pred))
+    print('Accuracy:', accuracy_score(y_test, y_pred))
+    return clf, X_test, y_test, y_pred
 
-# Encode labels
-label_encoder = LabelEncoder()
-labels_encoded = label_encoder.fit_transform(labels)
-
-# Split data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(data, labels_encoded, test_size=0.2, random_state=42)
-
-# Reduce dimensionality for faster training (optional)
-pca = PCA(n_components=50)  # Adjust the number of components as needed
-X_train_pca = pca.fit_transform(X_train)
-X_test_pca = pca.transform(X_test)
-
-# Train a support vector classifier
-classifier = SVC(kernel='linear', random_state=42)
-classifier.fit(X_train_pca, y_train)
-
-# Predict on the test set
-y_pred = classifier.predict(X_test_pca)
-
-# Evaluate the classifier
-accuracy = accuracy_score(y_test, y_pred)
-conf_matrix = confusion_matrix(y_test, y_pred)
-
-print(f"Accuracy: {accuracy * 100:.2f}%")
-print("Confusion Matrix:")
-print(conf_matrix)
-
-# Function to segment images
-def segment_images(annotation_path, train_image_path, output_path):
-    annotation = cv2.imread(annotation_path, cv2.IMREAD_GRAYSCALE)
-    train_image = cv2.imread(train_image_path)
-
-    if annotation is None:
-        raise ValueError(f"Failed to read annotation image: {annotation_path}")
-    if train_image is None:
-        raise ValueError(f"Failed to read train image: {train_image_path}")
-
-    print(f"Annotation shape: {annotation.shape}, Train image shape: {train_image.shape}")
-
-    # Ensure the dimensions match
-    if annotation.shape != train_image.shape[:2]:
-        print(f"Resizing train image from {train_image.shape[:2]} to {annotation.shape}")
-        train_image = cv2.resize(train_image, (annotation.shape[1], annotation.shape[0]))
-
-    # Create a mask for non-zero pixels
-    mask = annotation > 0
-
-    # Segment the image using the mask
-    segmented_image = np.zeros_like(train_image)
-    segmented_image[mask] = train_image[mask]
-
-    # Save the segmented image
-    cv2.imwrite(output_path, segmented_image)
-
-# Iterate through each object class for segmentation
-object_classes = ['gun', 'knife', 'safe']  # Add 'shuriken' if applicable
-
-for object_class in object_classes:
-    annotation_class_dir = os.path.join(annotations_dir, object_class)
-    train_class_dir = os.path.join(train_dir, object_class)
-    output_class_dir = os.path.join(train_dir, f'segmented_{object_class}')
-    os.makedirs(output_class_dir, exist_ok=True)
-
-    annotation_files = os.listdir(annotation_class_dir)
+def segment_image(image, clf):
+    if image.ndim == 3:
+        image = rgb2gray(image)
+    resized_image = cv2.resize(image, (128, 128))
     
-    for annotation_file in annotation_files:
-        annotation_path = os.path.join(annotation_class_dir, annotation_file)
-        train_image_path = os.path.join(train_class_dir, annotation_file)
-        output_path = os.path.join(output_class_dir, annotation_file)
+    # Convert image to uint8
+    resized_image_uint8 = (resized_image * 255).astype(np.uint8)
+    
+    # Edge features
+    edges = cv2.Canny(resized_image_uint8, 100, 200)
+    edge_hist = np.histogram(edges, bins=256, range=(0, 256))[0]
+    
+    # LBP features
+    lbp = local_binary_pattern(resized_image_uint8, P=8, R=1, method='uniform')
+    lbp_hist, _ = np.histogram(lbp, bins=np.arange(0, 10), range=(0, 9))
+    
+    # Hu moments
+    moments = cv2.moments(resized_image)
+    hu_moments = cv2.HuMoments(moments).flatten()
+    
+    # HOG features
+    fd = hog(resized_image, orientations=9, pixels_per_cell=(8, 8),
+                    cells_per_block=(2, 2), visualize=False, feature_vector=True)
+    
+    # Combine features
+    feature_vector = np.hstack((edge_hist, lbp_hist, hu_moments, fd)).reshape(1, -1)
+    
+    prediction = clf.predict(feature_vector)
+    if prediction[0] != 'safe':
+        ret, thresh = cv2.threshold((resized_image * 255).astype(np.uint8), 128, 255, cv2.THRESH_BINARY)
+        labels = measure.label(thresh)
+        output_image = cv2.cvtColor((resized_image * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+        for region in measure.regionprops(labels):
+            minr, minc, maxr, maxc = region.bbox
+            cv2.rectangle(output_image, (minc, minr), (maxc, maxr), (0, 255, 0), 2)
+        return output_image, prediction[0]
+    return cv2.cvtColor((resized_image * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR), 'safe'
 
-        if os.path.exists(train_image_path):
-            try:
-                segment_images(annotation_path, train_image_path, output_path)
-            except ValueError as e:
-                print(f"Error processing {annotation_file}: {e}")
-        else:
-            print(f"Train image for {annotation_file} not found.")
+def plot_metrics(labels, predictions, output_dir):
+    f1 = f1_score(labels, predictions, average=None, labels=['gun', 'knife', 'safe'])
+    dice_coefficient = 2 * f1 / (1 + f1)
+    
+    plt.figure(figsize=(10, 5))
+    plt.bar(['gun', 'knife', 'safe'], f1, color='green')
+    plt.title('F1-score for each label')
+    plt.xlabel('Label')
+    plt.ylabel('F1-score')
+    plt.savefig(os.path.join(output_dir, 'f1_scores.png'))
+    plt.close()
 
-print("Segmentation completed.")
+    plt.figure(figsize=(10, 5))
+    plt.bar(['gun', 'knife', 'safe'], dice_coefficient, color='blue')
+    plt.title('Dice Coefficient for each label')
+    plt.xlabel('Label')
+    plt.ylabel('Dice Coefficient')
+    plt.savefig(os.path.join(output_dir, 'dice_coefficients.png'))
+    plt.close()
 
-# Function to calculate Dice coefficient for segmentation evaluation
-def dice_coefficient(mask1, mask2):
-    intersection = np.sum(mask1[mask2 == 255])
-    return (2. * intersection) / (np.sum(mask1) + np.sum(mask2))
+def save_confusion_matrix(y_test, y_pred, output_dir):
+    conf_matrix = confusion_matrix(y_test, y_pred)
+    fig, ax = plt.subplots()
+    cax = ax.matshow(conf_matrix, cmap=plt.cm.Blues)
+    plt.title('Confusion Matrix')
+    fig.colorbar(cax)
+    labels = ['safe', 'gun', 'knife']
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_yticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'))
+    plt.close()
 
-# Example evaluation of segmentation (adjust paths accordingly)
-# Note: You need ground truth masks for evaluation
-# Replace 'path_to_segmented_image' and 'path_to_ground_truth_mask' with actual paths
-segmented_mask = cv2.imread('path_to_segmented_image', cv2.IMREAD_GRAYSCALE)
-ground_truth_mask = cv2.imread('path_to_ground_truth_mask', cv2.IMREAD_GRAYSCALE)
+def plot_classification_report(y_test, y_pred, output_dir):
+    report = classification_report(y_test, y_pred, output_dict=True)
+    
+    labels = list(report.keys())[:-3]  # Exclude 'accuracy', 'macro avg', and 'weighted avg'
+    precision = [report[label]['precision'] for label in labels]
+    recall = [report[label]['recall'] for label in labels]
+    f1_score = [report[label]['f1-score'] for label in labels]
+    support = [report[label]['support'] for label in labels]
+    
+    x = np.arange(len(labels))
+    width = 0.2
+    
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+    
+    ax1.bar(x - width, precision, width, label='Precision')
+    ax1.bar(x, recall, width, label='Recall')
+    ax1.bar(x + width, f1_score, width, label='F1-Score')
+    
+    ax1.set_xlabel('Labels')
+    ax1.set_ylabel('Scores')
+    ax1.set_title('Classification Report')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(labels)
+    ax1.legend()
+    
+    ax2 = ax1.twinx()
+    ax2.plot(x, support, color='black', marker='o', linestyle='-', linewidth=2, label='Support')
+    ax2.set_ylabel('Support')
+    ax2.legend(loc='upper right')
+    
+    plt.savefig(os.path.join(output_dir, 'classification_report.png'))
+    plt.close()
 
-dice = dice_coefficient(segmented_mask, ground_truth_mask)
-print(f"Dice Coefficient: {dice:.4f}")
+def generate_segmentation_images(images, labels, classifier, output_dir):
+    for idx, (image, label) in enumerate(zip(images, labels)):
+        segmented_image, prediction = segment_image(image, classifier)
+        
+        # Resize the segmented image to match the original image's dimensions
+        segmented_image_resized = cv2.resize(segmented_image, (image.shape[1], image.shape[0]))
+        
+        # Create grid image
+        grid_image = np.zeros((image.shape[0], image.shape[1] * 2, 3), dtype=np.uint8)
+        grid_image[:, :image.shape[1]] = image
+        grid_image[:, image.shape[1]:] = segmented_image_resized
 
-# Prepare submission
-# Ensure your paths and files are correct and exist
-submission_dir = 'D:/Semester 6/DIP/DIP-code/Project/submission'
-os.makedirs(submission_dir, exist_ok=True)
+        cv2.putText(grid_image, f'Prediction: {prediction}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(grid_image, f'Actual: {label}', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
-# Save the report and code files
-report_content = """
-Title: Digital Image Processing Project
+        # Save the grid image
+        plt.figure(figsize=(10, 5))
+        plt.grid(False)
+        plt.imshow(cv2.cvtColor(grid_image, cv2.COLOR_BGR2RGB))
+        plt.title(f'Segment Image {idx}: {label} ({prediction})')
+        plt.savefig(os.path.join(output_dir, f'segmented_display_{label}_{idx}.png'))
+        plt.close()
 
-Abstract:
-[Your abstract here]
+def display(paths):
+    images = [cv2.imread(path) for path in paths]
+    plt.figure(figsize=(16, 4))
+    for i in range(len(images)):
+        plt.subplot(1, len(images), i+1)
+        plt.imshow(cv2.cvtColor(images[i], cv2.COLOR_BGR2RGB), aspect='equal')
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
 
-Introduction:
-[Your introduction here]
+def main():
+    base_dir = 'Project'  
+    train_dir = os.path.join(base_dir, 'train')
+    test_dir = os.path.join(base_dir, 'test')
+    analytics_output_dir = os.path.join(base_dir, 'output/details')
+    output_dir = os.path.join(base_dir, 'output')
+    os.makedirs(analytics_output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-Methodology:
-[Your methodology here, including data preparation, model training, and segmentation approach]
+    train_images, train_labels = load_images_and_masks(train_dir)
+    test_images, test_labels = load_images_and_masks(test_dir)
 
-Results:
-Classification Accuracy: {accuracy * 100:.2f}%
-Confusion Matrix:
-{conf_matrix}
+    train_features = extract_features(train_images)
+    
+    clf, X_test, y_test, y_pred = train_svm_classifier(train_features, train_labels)
+    plot_metrics(y_test, y_pred, analytics_output_dir)
+    save_confusion_matrix(y_test, y_pred, analytics_output_dir)
+    plot_classification_report(y_test, y_pred, analytics_output_dir)
+    generate_segmentation_images(test_images, test_labels, clf, output_dir)
+    display([os.path.join(analytics_output_dir, 'confusion_matrix.png'), 
+             os.path.join(analytics_output_dir, 'dice_coefficients.png'), 
+             os.path.join(analytics_output_dir, 'f1_scores.png'),
+             os.path.join(analytics_output_dir, 'classification_report.png')])
+    print("Analysis and image generation completed. Check the output folder.")
 
-Dice Coefficient for Segmentation: {dice:.4f}
-
-Discussion:
-[Your discussion here]
-
-Conclusion:
-[Your conclusion here]
-
-References:
-[Your references here]
-""".format(accuracy=accuracy, conf_matrix=conf_matrix, dice=dice)
-
-report_path = os.path.join(submission_dir, 'report.txt')
-with open(report_path, 'w') as f:
-    f.write(report_content)
-
-# Copy the code files to the submission directory
-import shutil
-code_files = ['main.py']  # Add other code files if needed
-for code_file in code_files:
-    shutil.copy(code_file, submission_dir)
-
-print("Submission prepared at:", submission_dir)
+if __name__ == "__main__":
+    main()
