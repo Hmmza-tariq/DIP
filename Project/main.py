@@ -1,104 +1,58 @@
 import os
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
-from skimage.feature import hog
-from skimage import color
-from sklearn.preprocessing import LabelEncoder
 
-# Define paths
-train_path = 'Project\\train'
-test_path = 'Project\\test'
+base_dir = 'D:/Semester 6/DIP/DIP-code/Project' 
+train_dir = os.path.join(base_dir, 'train')
+annotations_dir = os.path.join(train_dir, 'annotations')
 
-# Function to extract HOG features
-def extract_hog_features(image):
-    gray_image = color.rgb2gray(image)
-    hog_features, hog_image = hog(gray_image, pixels_per_cell=(16, 16),
-                                  cells_per_block=(2, 2), visualize=True, multichannel=False)
-    return hog_features
+# Function to segment images
+def segment_images(annotation_path, train_image_path, output_path):
+    annotation = cv2.imread(annotation_path, cv2.IMREAD_GRAYSCALE)
+    train_image = cv2.imread(train_image_path)
 
-# Load and preprocess data
-def load_data(path):
-    data = []
-    labels = []
-    for category in os.listdir(path):
-        category_path = os.path.join(path, category)
-        if os.path.isdir(category_path):
-            for img_name in os.listdir(category_path):
-                img_path = os.path.join(category_path, img_name)
-                img = cv2.imread(img_path)
-                img = cv2.resize(img, (256, 256))
-                features = extract_hog_features(img)
-                data.append(features)
-                labels.append(category)
-    return np.array(data), np.array(labels)
+    if annotation is None:
+        raise ValueError(f"Failed to read annotation image: {annotation_path}")
+    if train_image is None:
+        raise ValueError(f"Failed to read train image: {train_image_path}")
 
-# Load train and test data
-X_train, y_train = load_data(train_path)
-X_test, y_test = load_data(test_path)
+    # print(f"Annotation shape: {annotation.shape}, Train image shape: {train_image.shape}")
 
-# Encode labels
-le = LabelEncoder()
-y_train = le.fit_transform(y_train)
-y_test = le.transform(y_test)
+    # Ensure the dimensions match
+    if annotation.shape != train_image.shape[:2]:
+        # print(f"Resizing train image from {train_image.shape[:2]} to {annotation.shape}")
+        train_image = cv2.resize(train_image, (annotation.shape[1], annotation.shape[0]))
 
-# Train SVM classifier
-svm = SVC(kernel='linear')
-svm.fit(X_train, y_train)
+    # Create a mask for non-zero pixels
+    mask = annotation > 0
 
-# Predict on test data
-y_pred = svm.predict(X_test)
+    # Segment the image using the mask
+    segmented_image = np.zeros_like(train_image)
+    segmented_image[mask] = train_image[mask]
+    cv2.imwrite(output_path, segmented_image)
 
-# Evaluate classifier
-accuracy = accuracy_score(y_test, y_pred)
-conf_matrix = confusion_matrix(y_test, y_pred)
-f1 = f1_score(y_test, y_pred, average='weighted')
+# Iterate through each object class
+object_classes = ['gun', 'knife'] 
 
-print(f'Classification Accuracy: {accuracy}')
-print(f'Confusion Matrix: \n{conf_matrix}')
-print(f'F1 Score: {f1}')
+for object_class in object_classes:
+    annotation_class_dir = os.path.join(annotations_dir, object_class)
+    train_class_dir = os.path.join(train_dir, object_class)
+    output_class_dir = os.path.join(train_dir, f'segmented_{object_class}')
+    os.makedirs(output_class_dir, exist_ok=True)
 
-# Function to perform basic segmentation using thresholding
-def segment_image(image):
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresholded = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY)
-    return thresholded
+    annotation_files = os.listdir(annotation_class_dir)
+    
+    for annotation_file in annotation_files:
+        annotation_path = os.path.join(annotation_class_dir, annotation_file)
+        train_image_path = os.path.join(train_class_dir, annotation_file)
+        output_path = os.path.join(output_class_dir, annotation_file)
 
-# Evaluate segmentation (dummy example, replace with actual mask evaluation)
-def evaluate_segmentation(X, y_true_masks):
-    dice_scores = []
-    for i, image in enumerate(X):
-        pred_mask = segment_image(image)
-        true_mask = y_true_masks[i]
-        intersection = np.logical_and(pred_mask, true_mask)
-        dice_score = 2. * intersection.sum() / (pred_mask.sum() + true_mask.sum())
-        dice_scores.append(dice_score)
-    return np.mean(dice_scores)
+        if os.path.exists(train_image_path):
+            try:
+                segment_images(annotation_path, train_image_path, output_path)
+            except ValueError as e:
+                print(f"Error processing {annotation_file}: {e}")
+        else:
+            print(f"Train image for {annotation_file} not found.")
 
-# Load segmentation masks for evaluation (dummy example)
-# Assuming masks are preprocessed and loaded as numpy arrays
-X_seg_train = [cv2.imread(os.path.join(train_path, 'safe', img_name)) for img_name in os.listdir(os.path.join(train_path, 'safe'))]
-Y_seg_train = [cv2.imread(os.path.join(train_path, 'annotations', mask_name), 0) for mask_name in os.listdir(os.path.join(train_path, 'annotations'))]
-
-dice_coeff = evaluate_segmentation(X_seg_train, Y_seg_train)
-print(f'Dice Coefficient: {dice_coeff}')
-
-# Plot sample outputs
-def plot_sample_predictions(images, masks, n_samples=3):
-    fig, axes = plt.subplots(n_samples, 2, figsize=(10, 10))
-    for i in range(n_samples):
-        pred_mask = segment_image(images[i])
-        axes[i, 0].imshow(masks[i], cmap='gray')
-        axes[i, 0].set_title('Ground Truth Mask')
-        axes[i, 1].imshow(pred_mask, cmap='gray')
-        axes[i, 1].set_title('Predicted Mask')
-    plt.tight_layout()
-    plt.show()
-
-plot_sample_predictions(X_seg_train, Y_seg_train)
-
-# Save and submit
-# Prepare the submission zip file and GitHub repository manually
+print("Segmentation completed.")
