@@ -121,10 +121,11 @@ def segment_image(image, mask, clf):
         output_image = cv2.cvtColor((resized_image * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
         for region in measure.regionprops(labels):
             minr, minc, maxr, maxc = region.bbox
-            cv2.rectangle(output_image, (minc, minr), (maxc, maxr), (0, 255, 0), 2)
+            cv2.rectangle(output_image, (minc, minr), (maxc, maxr), (0, 0, 255), 2)  # Changed color to red
             cv2.putText(output_image, prediction[0], (minc, minr - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         return output_image, prediction[0]
     return cv2.cvtColor((resized_image * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR), 'safe'
+
 
 def plot_metrics(labels, predictions, output_dir):
     f1 = f1_score(labels, predictions, average=None, labels=['gun', 'knife', 'safe'])
