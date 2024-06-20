@@ -20,7 +20,7 @@ def load_images_and_masks(data_dir):
         annotation_path = os.path.join(data_dir, 'annotations', category)
         for file in os.listdir(category_path):
             img_path = os.path.join(category_path, file)
-            annotation_file = file.replace('.jpg', '.png')  # Assuming annotation files are .png format
+            annotation_file = file.replace('.jpg', '.png') 
             annotation_path_file = os.path.join(annotation_path, annotation_file)
             image = cv2.imread(img_path)
             if category != 'safe' and not os.path.exists(annotation_path_file):
@@ -205,10 +205,8 @@ def generate_segmentation_images(images, masks, labels, classifier, output_dir):
     for idx, (image, mask, label) in enumerate(zip(images, masks, labels)):
         segmented_image, prediction = segment_image(image, mask, classifier)
         
-        # Resize the segmented image to match the original image's dimensions
         segmented_image_resized = cv2.resize(segmented_image, (image.shape[1], image.shape[0]))
         
-        # Create grid image
         grid_image = np.zeros((image.shape[0], image.shape[1] * 2, 3), dtype=np.uint8)
         grid_image[:, :image.shape[1]] = image
         grid_image[:, image.shape[1]:] = segmented_image_resized
@@ -216,7 +214,6 @@ def generate_segmentation_images(images, masks, labels, classifier, output_dir):
         cv2.putText(grid_image, f'Prediction: {prediction}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1)
         cv2.putText(grid_image, f'Actual: {label}', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
-        # Save the grid image
         plt.figure(figsize=(10, 5))
         plt.grid(False)
         plt.imshow(cv2.cvtColor(grid_image, cv2.COLOR_BGR2RGB))
